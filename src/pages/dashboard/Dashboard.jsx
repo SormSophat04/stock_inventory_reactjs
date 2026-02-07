@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchDashboardData,
+  selectDashboardData,
+  selectDashboardStatus,
+  selectDashboardError,
+} from "../../redux/slices/dashboardSlice";
 import {
   BarChart,
   Bar,
@@ -27,99 +34,7 @@ import {
 import { motion } from "framer-motion";
 import CountUp from "react-countup";
 import { Toaster, toast } from "react-hot-toast";
-
-// --- Mock Data ---
-// Used as a fallback on API error or during development
-const mockData = {
-  stats: {
-    total_products: 120,
-    total_stock_value: 20500.75,
-    today_sales: 850.2,
-    low_stock_count: 4,
-  },
-  sales_chart: [
-    { date: "Mon", total: 200 },
-    { date: "Tue", total: 450 },
-    { date: "Wed", total: 300 },
-    { date: "Thu", total: 600 },
-    { date: "Fri", total: 850 },
-    { date: "Sat", total: 700 },
-    { date: "Sun", total: 550 },
-  ],
-  profit_chart: [
-    { date: "Nov 6", revenue: 1000, cogs: 700, profit: 300 },
-    { date: "Nov 7", revenue: 1200, cogs: 800, profit: 400 },
-    { date: "Nov 8", revenue: 900, cogs: 650, profit: 250 },
-    { date: "Nov 9", revenue: 1500, cogs: 900, profit: 600 },
-    { date: "Nov 10", revenue: 1700, cogs: 1000, profit: 700 },
-    { date: "Nov 11", revenue: 1400, cogs: 850, profit: 550 },
-    { date: "Nov 12", revenue: 1900, cogs: 1100, profit: 800 },
-  ],
-  warehouse_stock: [
-    { id: 1, warehouse_name: "Main Warehouse", total_stock: 4500 },
-    { id: 2, warehouse_name: "West Wing Storage", total_stock: 1200 },
-    { id: 3, warehouse_name: "Cold Storage", total_stock: 350 },
-    { id: 4, warehouse_name: "Overflow Unit B", total_stock: 800 },
-  ],
-  low_stock: [
-    { id: 1, name: "Premium USB-C Cable", current_stock: 3, min_level: 5 },
-    { id: 2, name: "Wireless Mouse", current_stock: 8, min_level: 10 },
-    { id: 3, name: "Bluetooth Keyboard", current_stock: 2, min_level: 5 },
-    { id: 4, name: "4K Monitor", current_stock: 1, min_level: 2 },
-  ],
-  top_categories: [
-    { id: 1, name: "Electronics", products_count: 40 },
-    { id: 2, name: "Peripherals", products_count: 32 },
-    { id: 3, name: "Cables & Adapters", products_count: 25 },
-    { id: 4, name: "Audio", products_count: 15 },
-  ],
-  top_brands: [
-    { id: 1, name: "Apple", products_count: 12 },
-    { id: 2, name: "Logitech", products_count: 18 },
-    { id: 3, name: "Samsung", products_count: 9 },
-    { id: 4, name: "Anker", products_count: 22 },
-  ],
-  recent_sales: [
-    {
-      id: 1,
-      invoice_no: "INV001",
-      customer_name: "John Doe",
-      total_amount: 150.0,
-    },
-    {
-      id: 2,
-      invoice_no: "INV002",
-      customer_name: "Jane Smith",
-      total_amount: 299.99,
-    },
-    {
-      id: 3,
-      invoice_no: "INV003",
-      customer_name: "Tech Corp",
-      total_amount: 1200.5,
-    },
-  ],
-  recent_purchases: [
-    {
-      id: 1,
-      invoice_no: "PUR001",
-      supplier_name: "ABC Supplier",
-      total_amount: 2500.0,
-    },
-    {
-      id: 2,
-      invoice_no: "PUR002",
-      supplier_name: "Global Electronics",
-      total_amount: 750.0,
-    },
-    {
-      id: 3,
-      invoice_no: "PUR003",
-      supplier_name: "Component World",
-      total_amount: 320.8,
-    },
-  ],
-};
+import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 // --- Role-Based Access Control (RBAC) ---
 const ROLES = {
@@ -225,7 +140,27 @@ const ScrollableList = ({ items, renderItem }) => (
  * @param {string} props.userRole - The role of the currently logged-in user.
  */
 const Dashboard = ({ userRole = ROLES.ADMIN }) => {
-  const data = mockData; // Use static mock data directly
+  const dispatch = useDispatch();
+  const dashboardData = useSelector(selectDashboardData);
+  const status = useSelector(selectDashboardStatus);
+  const error = useSelector(selectDashboardError);
+
+  // Fetch dashboard data on mount
+  useEffect(() => {
+    dispatch(fetchDashboardData());
+  }, [dispatch]);
+
+  // Log status for debugging
+  useEffect(() => {
+    if (status === 'failed') {
+      console.error('Dashboard API Error:', error);
+      toast.error(`Failed to load dashboard data: ${error || 'Unknown error'}`);
+    }
+    if (status === 'succeeded' && dashboardData) {
+
+      toast.success('Dashboard data loaded!');
+    }
+  }, [status, error, dashboardData]);
 
   // Memoize the user's permissions
   const permissions = useMemo(
@@ -245,23 +180,50 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
     [userRole]
   );
 
+  // Use API data only (no mock fallback)
+  const data = dashboardData;
+
   // --- Notification Effect ---
   useEffect(() => {
-    // 🔔 Placeholder for Firebase Notifications
-    // You would set up your Firebase listener here (e.g., using Firebase Messaging)
-    // onMessage(messaging, (payload) => {
-    //   console.log('Message received. ', payload);
-    //   toast.success(payload.notification.title);
-    // });
-
     // Example: Show a toast if low stock items are detected on data load
-    if (data.stats?.low_stock_count > 0) {
+    if (data?.stats?.low_stock_count > 0) {
       toast.error(
         `${data.stats.low_stock_count} item(s) are running low on stock!`,
         { icon: <AlertTriangle className="text-red-500" /> }
       );
     }
-  }, [data.stats?.low_stock_count]); // Depends on low_stock_count
+  }, [data?.stats?.low_stock_count]);
+
+  // Show loading state AFTER all hooks or if status is idle (initial load)
+  if (status === 'loading' || status === 'idle') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <LoadingSpinner message="Loading dashboard..." />
+      </div>
+    );
+  }
+
+  // Show error state AFTER all hooks
+  if (status === 'failed') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="text-center max-w-md">
+          <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Failed to Load Dashboard</h2>
+          <p className="text-slate-600 mb-4">{error || 'Unknown error occurred'}</p>
+          <button
+            onClick={() => dispatch(fetchDashboardData())}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Ensure data is not null to prevent crashes
+  const safeData = data || {};
 
   return (
     <div className=" text-gray-900 p-4 md:p-8">
@@ -279,14 +241,14 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
         {permissions.viewTotalProducts && (
           <StatCard
             title="Total Products"
-            value={data.stats?.total_products || 0}
+            value={safeData.stats?.total_products || 0}
             icon={<Package size={24} />}
           />
         )}
         {permissions.viewTotalStockValue && (
           <StatCard
             title="Total Stock Value"
-            value={data.stats?.total_stock_value || 0}
+            value={safeData.stats?.total_stock_value || 0}
             icon={<DollarSign size={24} />}
             isCurrency={true}
           />
@@ -294,7 +256,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
         {permissions.viewTodaySales && (
           <StatCard
             title="Today's Sales"
-            value={data.stats?.today_sales || 0}
+            value={safeData.stats?.today_sales || 0}
             icon={<ShoppingCart size={24} />}
             isCurrency={true}
           />
@@ -302,7 +264,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
         {permissions.viewLowStockCount && (
           <StatCard
             title="Low Stock Items"
-            value={data.stats?.low_stock_count || 0}
+            value={safeData.stats?.low_stock_count || 0}
             icon={<AlertTriangle size={24} />}
           />
         )}
@@ -317,8 +279,8 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
             {permissions.viewSalesChart && (
               <Panel title="Weekly Sales">
                 <div style={{ width: "100%", height: 300 }}>
-                  <ResponsiveContainer>
-                    <BarChart data={data.sales_chart}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={safeData.sales_chart || []}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         vertical={false}
@@ -346,8 +308,8 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
             {permissions.viewProfitChart && (
               <Panel title="Profit / Loss">
                 <div style={{ width: "100%", height: 300 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={data.profit_chart}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={safeData.profit_chart || []}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         vertical={false}
@@ -392,7 +354,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
             {permissions.viewRecentSales && (
               <Panel title="Recent Sales">
                 <ScrollableList
-                  items={data.recent_sales || []}
+                  items={safeData.recent_sales || []}
                   renderItem={(item) => (
                     <div
                       key={item.id}
@@ -416,7 +378,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
             {permissions.viewRecentPurchases && (
               <Panel title="Recent Purchases">
                 <ScrollableList
-                  items={data.recent_purchases || []}
+                  items={safeData.recent_purchases || []}
                   renderItem={(item) => (
                     <div
                       key={item.id}
@@ -445,7 +407,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
           {permissions.viewWarehousePanel && (
             <Panel title="Warehouse Overview">
               <ScrollableList
-                items={data.warehouse_stock || []}
+                items={safeData.warehouse_stock || []}
                 renderItem={(item) => (
                   <div
                     key={item.id}
@@ -469,7 +431,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
           {permissions.viewLowStockPanel && (
             <Panel title="Low Stock Alerts">
               <ScrollableList
-                items={data.low_stock || []}
+                items={safeData.low_stock || []}
                 renderItem={(item) => (
                   <div
                     key={item.id}
@@ -498,7 +460,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
                     Top Categories
                   </h4>
                   <ul className="space-y-2">
-                    {(data.top_categories || []).map((cat) => (
+                    {(safeData.top_categories || []).map((cat) => (
                       <li key={cat.id} className="flex justify-between text-sm">
                         <span className="text-gray-700">{cat.name}</span>
                         <span className="font-medium text-gray-900">
@@ -513,7 +475,7 @@ const Dashboard = ({ userRole = ROLES.ADMIN }) => {
                     Top Brands
                   </h4>
                   <ul className="space-y-2">
-                    {(data.top_brands || []).map((brand) => (
+                    {(safeData.top_brands || []).map((brand) => (
                       <li
                         key={brand.id}
                         className="flex justify-between text-sm"

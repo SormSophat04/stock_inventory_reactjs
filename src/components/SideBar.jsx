@@ -26,8 +26,23 @@ import {
   FiSettings,
 } from "react-icons/fi";
 import SidebarDropdown from "./SidebarDropdown";
+import { AuthContext } from "../contexts/AuthContext";
+
+const ROLES = {
+  ADMIN: "admin",
+  MANAGER: "manager",
+  CASHIER: "cashier",
+  WAREHOUSE_STAFF: "warehouse_stuff",
+};
 
 function SideBar() {
+  const { user, logout } = React.useContext(AuthContext);
+
+  const hasRole = (roles) => {
+    if (!user || !user.role) return false;
+    return roles.includes(user.role);
+  };
+
   return (
     <aside className="h-screen w-64 bg-white border-r border-gray-200 fixed top-0 left-0 overflow-y-auto">
       <nav className="h-full flex flex-col">
@@ -59,113 +74,172 @@ function SideBar() {
           </div>
         </div>
         <ul className="flex-1 px-4">
-          <SidebarItem to="/" icon={<FiGrid size={20} />} text="Dashboard" />
-          <SidebarDropdown text="Master Data" defaultOpen={true}>
+          <SidebarItem
+            to="/dashboard"
+            icon={<FiGrid size={20} />}
+            text="Dashboard"
+          />
+          {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER]) && (
             <SidebarItem
-              to="/products"
-              icon={<FiPackage size={20} />}
-              text="Products"
-            />
-            <SidebarItem
-              to="/categories"
-              icon={<FiLayers size={20} />}
-              text="Categories"
-            />
-            <SidebarItem
-              to="/brands"
-              icon={<FiBookmark size={20} />}
-              text="Brands"
-            />
-            <SidebarItem
-              to="/suppliers"
-              icon={<FiTruck size={20} />}
-              text="Suppliers"
-            />
-            <SidebarItem
-              to="/customers"
-              icon={<FiUsers size={20} />}
-              text="Customers"
-            />
-            <SidebarItem
-              to="/units"
-              icon={<FaRuler size={20} />}
-              text="Units"
-            />
-            <SidebarItem
-              to="/warehouses"
-              icon={<FiArchive size={20} />}
-              text="Warehouses"
-            />
-          </SidebarDropdown>
-
-          <SidebarDropdown text="Inventory" defaultOpen={true}>
-            <SidebarItem
-              to="/inventory/stock-in"
-              icon={<FiLogIn size={20} />}
-              text="Stock In (Purchase)"
-            />
-            <SidebarItem
-              to="/inventory/stock-out"
-              icon={<FiLogOut size={20} />}
-              text="Stock Out (Sales)"
-            />
-            <SidebarItem
-              to="/inventory/transfer"
-              icon={<FiRepeat size={20} />}
-              text="Stock Transfer"
-            />
-            <SidebarItem
-              to="/inventory/adjustment"
-              icon={<FiEdit size={20} />}
-              text="Stock Adjustment"
-            />
-            <SidebarItem
-              to="/inventory/count"
-              icon={<FiCheckSquare size={20} />}
-              text="Stock Count"
-            />
-            <SidebarItem
-              to="/inventory/low-stock"
-              icon={<FiAlertTriangle size={20} />}
-              text="Low Stock Alerts"
-            />
-          </SidebarDropdown>
-
-          <SidebarDropdown text="Transactions" defaultOpen={true}>
-            <SidebarItem
-              to="/transactions/purchases"
-              icon={<FiFileText size={20} />}
-              text="Purchase Orders"
-            />
-            <SidebarItem
-              to="/transactions/purchase-invoices"
-              icon={<FiFilePlus size={20} />}
-              text="Purchase Invoices"
-            />
-            <SidebarItem
-              to="/transactions/sales"
+              to="/point-of-sales"
               icon={<FiShoppingCart size={20} />}
-              text="Sales Orders"
+              text="Point of Sales"
             />
+          )}
+          {hasRole([ROLES.ADMIN]) && (
             <SidebarItem
-              to="/transactions/sales-invoices"
-              icon={<FiFile size={20} />}
-              text="Sales Invoices"
+              to="/users"
+              icon={<FiUsers size={20} />}
+              text="Users"
             />
-            <SidebarItem
-              to="/transactions/returns"
-              icon={<FiCornerUpLeft size={20} />}
-              text="Return Orders"
-            />
-            <SidebarItem
-              to="/transactions/payments"
-              icon={<FiDollarSign size={20} />}
-              text="Payment Management"
-            />
-          </SidebarDropdown>
+          )}
+
+          {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER]) && (
+            <SidebarDropdown text="Master Data" defaultOpen={true}>
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <>
+                  <SidebarItem
+                    to="/products"
+                    icon={<FiPackage size={20} />}
+                    text="Products"
+                  />
+                  <SidebarItem
+                    to="/categories"
+                    icon={<FiLayers size={20} />}
+                    text="Categories"
+                  />
+                  <SidebarItem
+                    to="/brands"
+                    icon={<FiBookmark size={20} />}
+                    text="Brands"
+                  />
+                  <SidebarItem
+                    to="/suppliers"
+                    icon={<FiTruck size={20} />}
+                    text="Suppliers"
+                  />
+                </>
+              )}
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER]) && (
+                <SidebarItem
+                  to="/customers"
+                  icon={<FiUsers size={20} />}
+                  text="Customers"
+                />
+              )}
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <>
+                  <SidebarItem
+                    to="/units"
+                    icon={<FaRuler size={20} />}
+                    text="Units"
+                  />
+                  <SidebarItem
+                    to="/warehouses"
+                    icon={<FiArchive size={20} />}
+                    text="Warehouses"
+                  />
+                </>
+              )}
+            </SidebarDropdown>
+          )}
+
+          {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.WAREHOUSE_STAFF]) && (
+            <SidebarDropdown text="Inventory" defaultOpen={true}>
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <>
+                  <SidebarItem
+                    to="/inventory/stock-in"
+                    icon={<FiLogIn size={20} />}
+                    text="Stock In (Purchase)"
+                  />
+                  <SidebarItem
+                    to="/inventory/stock-out"
+                    icon={<FiLogOut size={20} />}
+                    text="Stock Out (Sales)"
+                  />
+                </>
+              )}
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.WAREHOUSE_STAFF]) && (
+                <>
+                  <SidebarItem
+                    to="/inventory/transfer"
+                    icon={<FiRepeat size={20} />}
+                    text="Stock Transfer"
+                  />
+                  {/* <SidebarItem
+                    to="/inventory/adjustment"
+                    icon={<FiEdit size={20} />}
+                    text="Stock Adjustment"
+                  /> */}
+                  <SidebarItem
+                    to="/inventory/count"
+                    icon={<FiCheckSquare size={20} />}
+                    text="Stock Count"
+                  />
+                </>
+              )}
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <SidebarItem
+                  to="/inventory/low-stock"
+                  icon={<FiAlertTriangle size={20} />}
+                  text="Low Stock Alerts"
+                />
+              )}
+            </SidebarDropdown>
+          )}
+
+          {hasRole([ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER]) && (
+            <SidebarDropdown text="Transactions" defaultOpen={true}>
+              {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <>
+                  <SidebarItem
+                    to="/transactions/purchases"
+                    icon={<FiFileText size={20} />}
+                    text="Purchase Orders"
+                  />
+                  {/* <SidebarItem
+                    to="/transactions/purchase-invoices"
+                    icon={<FiFilePlus size={20} />}
+                    text="Purchase Invoices"
+                  /> */}
+                </>
+              )}
+              {/* <SidebarItem
+                to="/transactions/sales"
+                icon={<FiShoppingCart size={20} />}
+                text="Sales Orders"
+              /> */}
+              <SidebarItem
+                to="/transactions/sales-invoices"
+                icon={<FiFile size={20} />}
+                text="Sales Invoices"
+              />
+              <SidebarItem
+                to="/transactions/returns"
+                icon={<FiCornerUpLeft size={20} />}
+                text="Return Orders"
+              />
+              {/* <SidebarItem
+                to="/transactions/payments"
+                icon={<FiDollarSign size={20} />}
+                text="Payment Management"
+              /> */}
+            </SidebarDropdown>
+          )}
 
           {/* You can add the other sections (Accounting, Reports, etc.) following the same pattern */}
         </ul>
+        {/* Logout Button */}
+        <div className="p-4">
+          <button
+            onClick={logout}
+            className="w-full flex items-center justify-center space-x-2 rounded-md bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200"
+          >
+            <FiLogOut />
+            <span>Logout</span>
+          </button>
+        </div>
       </nav>
     </aside>
   );

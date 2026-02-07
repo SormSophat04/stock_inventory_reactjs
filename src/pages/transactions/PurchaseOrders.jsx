@@ -1,151 +1,175 @@
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   FiFileText,
-  FiPlusCircle,
+  FiPlus,
   FiCheckCircle,
   FiX,
   FiAlertCircle,
   FiTrash2,
+  FiLoader,
+  FiEdit2,
+  FiSearch,
+  FiFilter,
+  FiShoppingBag,
+  FiCalendar,
+  FiUser,
+  FiMapPin
 } from "react-icons/fi";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchPurchases,
+  createPurchase,
+  updatePurchase,
+  deletePurchase,
+  updatePurchaseStatus,
+  selectPurchaseStatus,
+  selectPurchaseError,
+  selectAllPurchases,
+  clearPurchaseError
+} from "../../redux/slices/purchaseSlice";
+import { fetchSuppliers, selectAllSuppliers, selectSupplierStatus } from "../../redux/slices/supplierSlice";
+import { fetchWarehouses, selectAllWarehouses, selectWarehouseStatus } from "../../redux/slices/warehouseSlice";
+import { fetchProducts, selectAllProducts, selectProductStatus } from "../../redux/slices/productSlice";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
 
-// Notification Component
+// --- Components ---
+
 const Notification = ({ notification, onClear }) => {
   if (!notification) return null;
   const { type, message } = notification;
   const isSuccess = type === "success";
-  const bgColor = isSuccess ? "bg-green-600" : "bg-red-600";
+  const bgColor = isSuccess ? "bg-emerald-500" : "bg-red-500";
   const Icon = isSuccess ? FiCheckCircle : FiAlertCircle;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -50, x: "-50%" }}
-      animate={{ opacity: 1, y: 0, x: "-50%" }}
-      exit={{ opacity: 0, y: -50 }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className={`fixed top-5 left-1/2 z-50 flex items-center gap-3 p-4 rounded-lg shadow-xl text-white ${bgColor}`}
+      initial={{ opacity: 0, y: -20, x: "-50%" }}
+      animate={{ opacity: 1, y: 20, x: "-50%" }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`fixed top-0 left-1/2 z-[60] flex items-center gap-3 px-6 py-3 rounded-full shadow-2xl text-white ${bgColor} backdrop-blur-md bg-opacity-90`}
     >
-      <Icon className="text-2xl" />
-      <span className="font-medium">{message}</span>
-      <button onClick={onClear} className="ml-2">
-        <FiX className="text-xl" />
+      <Icon className="text-xl" />
+      <span className="font-medium text-sm">{message}</span>
+      <button onClick={onClear} className="ml-2 hover:bg-white/20 rounded-full p-1 transition-colors">
+        <FiX />
       </button>
     </motion.div>
   );
 };
 
-// Modal Component
 const Modal = ({ isOpen, onClose, children, title }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-gray-900/75 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }} // Changed from max-w-3xl to max-w-5xl
-        className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
       >
-        <div className="flex justify-between items-center p-5 border-b border-slate-200">
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <FiX className="text-2xl" />
+            <FiX size={20} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </motion.div>
     </div>
   );
 };
 
-// Main Component
+const StatusBadge = ({ status }) => {
+  const styles = {
+    Received: "bg-emerald-100 text-emerald-700 ring-emerald-600/20",
+    Paid: "bg-emerald-100 text-emerald-700 ring-emerald-600/20",
+    Pending: "bg-amber-100 text-amber-700 ring-amber-600/20",
+    Unpaid: "bg-amber-100 text-amber-700 ring-amber-600/20",
+    Ordered: "bg-blue-100 text-blue-700 ring-blue-600/20",
+    Cancelled: "bg-red-100 text-red-700 ring-red-600/20",
+  };
+  
+  const defaultStyle = "bg-slate-100 text-slate-700 ring-slate-600/20";
+  const activeStyle = styles[status] || defaultStyle;
+
+  return (
+    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${activeStyle}`}>
+      {status}
+    </span>
+  );
+};
+
+// --- Main Page ---
+
 export default function PurchaseOrdersPage() {
-  const [orders, setOrders] = useState([
-    {
-      purchase_order_id: 1,
-      po_number: "PO-1001",
-      supplier: { name: "Tech Supplies Inc." },
-      warehouse: { name: "Main Warehouse" },
-      order_date: "2025-11-05",
-      expected_date: "2025-11-15",
-      status: "Pending",
-      total_cost: 1500.0,
-    },
-    {
-      purchase_order_id: 2,
-      po_number: "PO-1002",
-      supplier: { name: "Office Goods Co." },
-      warehouse: { name: "Secondary Warehouse" },
-      order_date: "2025-11-01",
-      expected_date: "2025-11-10",
-      status: "Received",
-      total_cost: 450.0,
-    },
-    {
-      purchase_order_id: 3,
-      po_number: "PO-1003",
-      supplier: { name: "MegaCorp Ltd." },
-      warehouse: { name: "Main Warehouse" },
-      order_date: "2025-11-10",
-      expected_date: "2025-11-20",
-      status: "Pending",
-      total_cost: 8200.0,
-    },
-  ]);
+  const dispatch = useDispatch();
+  
+  // Redux State
+  const orders = useSelector(selectAllPurchases);
+  const suppliers = useSelector(selectAllSuppliers);
+  const warehouses = useSelector(selectAllWarehouses);
+  const products = useSelector(selectAllProducts);
+  const productStatus = useSelector(selectProductStatus);
+  const supplierStatus = useSelector(selectSupplierStatus);
+  const warehouseStatus = useSelector(selectWarehouseStatus);
+  const status = useSelector(selectPurchaseStatus);
+  const error = useSelector(selectPurchaseError);
+
+  // Local State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  // Mock data for dropdowns
-  const [suppliers, setSuppliers] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [orderItems, setOrderItems] = useState([]);
-
-  // Form state
+  // Form State
   const [poNumber, setPoNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [orderDate, setOrderDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-  const [expectedDate, setExpectedDate] = useState("");
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0]);
+  const [orderItems, setOrderItems] = useState([]);
 
-  // Simulate fetching data
+  // --- Effects ---
   useEffect(() => {
-    setSuppliers([
-      { id: 1, name: "Tech Supplies Inc." },
-      { id: 2, name: "Office Goods Co." },
-      { id: 3, name: "MegaCorp Ltd." },
-    ]);
-    setWarehouses([
-      { id: 1, name: "Main Warehouse" },
-      { id: 2, name: "Secondary Warehouse" },
-    ]);
-    setProducts([
-      { id: 1, name: "Laptop Pro", cost_price: 900 },
-      { id: 2, name: "Smartphone X", cost_price: 600 },
-      { id: 3, name: "Wireless Mouse", cost_price: 25 },
-    ]);
-  }, []);
+    dispatch(fetchPurchases());
+    dispatch(fetchSuppliers());
+    dispatch(fetchWarehouses());
+    dispatch(fetchProducts());
+  }, [dispatch]);
 
-  // Notification timer
+  useEffect(() => {
+    if (error) {
+       let errorMessage = "An error occurred";
+       if (typeof error === 'string') {
+         errorMessage = error;
+       } else if (typeof error === 'object') {
+         errorMessage = error.message || JSON.stringify(error);
+       }
+       setNotification({ type: 'error', message: errorMessage });
+       dispatch(clearPurchaseError());
+    }
+  }, [error, dispatch]);
+
   useEffect(() => {
     if (notification) {
-      const timer = setTimeout(() => setNotification(null), 3000);
+      const timer = setTimeout(() => setNotification(null), 4000);
       return () => clearTimeout(timer);
     }
   }, [notification]);
 
+  // --- Logic ---
+
   const resetForm = () => {
-    setPoNumber("");
+    setPoNumber(`PO-${Math.floor(1000 + Math.random() * 9000)}`); // Auto-gen suggestion
     setSupplierId("");
     setWarehouseId("");
     setOrderDate(new Date().toISOString().split("T")[0]);
-    setExpectedDate("");
     setOrderItems([]);
   };
 
@@ -171,9 +195,9 @@ export default function PurchaseOrdersPage() {
     const item = newItems[index];
 
     if (field === "product_id") {
-      const product = products.find((p) => p.id === parseInt(value));
+      const product = products.find((p) => p.product_id === parseInt(value));
       item.product_id = value;
-      item.cost_price = product ? product.cost_price : 0;
+      item.cost_price = product ? (parseFloat(product.cost_price) || 0) : 0;
     } else {
       item[field] = value;
     }
@@ -186,423 +210,437 @@ export default function PurchaseOrdersPage() {
     return orderItems.reduce((sum, item) => sum + item.subtotal, 0);
   };
 
-  const handleReceive = (orderId) => {
-    setOrders(
-      orders.map((order) =>
-        order.purchase_order_id === orderId
-          ? { ...order, status: "Received" }
-          : order
-      )
-    );
-    setNotification({
-      type: "success",
-      message: `PO #${orderId} marked as Received!`,
-    });
+  const handleReceive = async (orderId) => {
+    if (!window.confirm("Mark as Received? This will update stock levels.")) return;
+    try {
+      await dispatch(updatePurchaseStatus({ id: orderId, status: "Received" })).unwrap();
+      setNotification({ type: "success", message: "Order received & stock updated!" });
+    } catch {
+      setNotification({ type: "error", message: "Failed to mark order as received." });
+    }
   };
 
-  const handleOpenModal = () => {
-    resetForm();
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Delete this order? Action cannot be undone.")) return;
+    try {
+      await dispatch(deletePurchase(orderId)).unwrap();
+      setNotification({ type: "success", message: "Order deleted successfully." });
+    } catch {
+      setNotification({ type: "error", message: "Failed to delete order." });
+    }
+  };
+
+  const handleOpenModal = (order = null) => {
+    if (order) {
+      setEditingOrder(order);
+      setPoNumber(order.invoice_no);
+      setSupplierId(order.supplier_id);
+      setWarehouseId(order.warehouse_id);
+      setOrderDate(order.purchase_date);
+      setOrderItems((order.items || []).map(item => ({
+        ...item,
+        key: item.purchase_item_id || Math.random(),
+        product_id: item.product_id,
+        quantity: item.quantity,
+        cost_price: item.cost_price,
+        subtotal: item.quantity * item.cost_price
+      })));
+    } else {
+      resetForm();
+      setEditingOrder(null);
+    }
     setIsModalOpen(true);
   };
 
-  const handleSubmitNewOrder = () => {
+  const handleSubmit = async () => {
     if (!poNumber || !supplierId || !warehouseId) {
-      setNotification({
-        type: "error",
-        message: "PO #, Supplier, and Warehouse are required.",
-      });
+      setNotification({ type: "error", message: "Please fill in all required fields." });
       return;
     }
-
     if (orderItems.length === 0) {
-      setNotification({
-        type: "error",
-        message: "Please add at least one item to the order.",
-      });
+      setNotification({ type: "error", message: "Add at least one item." });
       return;
     }
-    const supplier = suppliers.find((s) => s.id === parseInt(supplierId));
-    const warehouse = warehouses.find((w) => w.id === parseInt(warehouseId));
-    const totalCost = calculateTotal();
+    if (orderItems.some(i => !i.product_id)) {
+        setNotification({ type: "error", message: "Select a product for all items." });
+        return;
+    }
 
-    const newOrder = {
-      purchase_order_id: Date.now(),
-      po_number: poNumber,
-      supplier: { name: supplier ? supplier.name : "N/A" },
-      warehouse: { name: warehouse ? warehouse.name : "N/A" },
-      order_date: orderDate,
-      expected_date: expectedDate || "—",
-      status: "Pending",
-      total_cost: totalCost, // Calculated total
+    const payload = {
+      invoice_no: poNumber,
+      supplier_id: parseInt(supplierId),
+      warehouse_id: parseInt(warehouseId),
+      purchase_date: orderDate,
+      items: orderItems.map((item) => ({
+        product_id: parseInt(item.product_id),
+        quantity: parseInt(item.quantity),
+        cost_price: parseFloat(item.cost_price),
+      })),
     };
 
-    setOrders([newOrder, ...orders]);
-    setIsModalOpen(false);
-    setNotification({
-      type: "success",
-      message: "Purchase order created successfully!",
-    });
-  };
-
-  const getStatusClass = (status) => {
-    switch (status) {
-      case "Received":
-        return "bg-green-100 text-green-800";
-      case "Pending":
-        return "bg-yellow-100 text-yellow-800";
-      default:
-        return "bg-slate-100 text-slate-800";
+    try {
+      if (editingOrder) {
+        await dispatch(updatePurchase({ id: editingOrder.purchase_id, data: payload })).unwrap();
+        setNotification({ type: "success", message: "Order updated successfully." });
+      } else {
+        await dispatch(createPurchase(payload)).unwrap();
+        setNotification({ type: "success", message: "Order created successfully." });
+      }
+      setIsModalOpen(false);
+    } catch {
+      setNotification({ type: "error", message: "Failed to create order." });
     }
   };
 
+  // Filtering
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch = 
+      order.invoice_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.supplier?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || order.payment_status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const isLoading = status === 'loading' || productStatus === 'loading' || supplierStatus === 'loading' || warehouseStatus === 'loading';
+
   return (
-    <>
-      <Notification
-        notification={notification}
-        onClear={() => setNotification(null)}
-      />
-      <motion.div
-        className="p-4 sm:p-6 font-sans"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <div className="mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
-          {/* Card Header */}
-          <div className="p-6 sm:p-8 border-b border-slate-200">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
-                  <FiFileText className="text-indigo-600 w-7 h-7" />
-                  Purchase Orders
-                </h1>
-                <p className="mt-2 text-sm text-slate-500">
-                  Manage and track all purchase orders from suppliers.
-                </p>
-              </div>
-              <button
-                onClick={handleOpenModal}
-                className="inline-flex items-center gap-2 px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all w-full sm:w-auto"
-              >
-                <FiPlusCircle size={18} /> New Purchase Order
-              </button>
-            </div>
-          </div>
+    <div className="p-6 max-w-[1600px] mx-auto font-sans text-slate-800">
+      <AnimatePresence>
+        <Notification notification={notification} onClear={() => setNotification(null)} />
+      </AnimatePresence>
 
-          {/* Filters */}
-          <div className="p-6 sm:p-8 border-b border-slate-200">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                placeholder="Search PO #, supplier..."
-                className="flex-grow w-full sm:w-1/3 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <select className="w-full sm:w-1/4 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="all">All Status</option>
-                <option value="Pending">Pending</option>
-                <option value="Received">Received</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 sm:p-8">
-            {orders.length === 0 ? (
-              <div className="text-center text-slate-500 py-10">
-                <h3 className="text-lg font-semibold">
-                  No Purchase Orders Found
-                </h3>
-                <p className="mt-1 text-sm">
-                  Get started by creating a new purchase order.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      {[
-                        "PO Number",
-                        "Supplier",
-                        "Warehouse",
-                        "Order Date",
-                        "Expected Date",
-                        "Status",
-                        "Total",
-                        "Actions",
-                      ].map((head) => (
-                        <th
-                          key={head}
-                          className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider"
-                        >
-                          {head}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {orders.map((order) => (
-                      <tr
-                        key={order.purchase_order_id}
-                        className="hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="p-3 text-sm font-medium text-indigo-700">
-                          {order.po_number}
-                        </td>
-                        <td className="p-3 text-sm text-slate-600">
-                          {order.supplier?.name}
-                        </td>
-                        <td className="p-3 text-sm text-slate-600">
-                          {order.warehouse?.name}
-                        </td>
-                        <td className="p-3 text-sm text-slate-600">
-                          {order.order_date}
-                        </td>
-                        <td className="p-3 text-sm text-slate-600">
-                          {order.expected_date || "—"}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2.5 py-1 text-xs font-semibold rounded-full ${getStatusClass(
-                              order.status
-                            )}`}
-                          >
-                            {order.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-sm text-right font-semibold text-slate-700">
-                          ${order.total_cost.toFixed(2)}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            {order.status !== "Received" && (
-                              <button
-                                onClick={() =>
-                                  handleReceive(order.purchase_order_id)
-                                }
-                                className="inline-flex items-center gap-1.5 py-1 px-3 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all"
-                              >
-                                <FiCheckCircle size={14} /> Receive
-                              </button>
-                            )}
-                            <button className="inline-flex items-center gap-1.5 py-1 px-3 rounded-md text-xs font-medium bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition-all">
-                              View
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+             <div className="p-3 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-200">
+                <FiShoppingBag size={24} />
+             </div>
+             Purchase Orders
+          </h1>
+          <p className="mt-2 text-slate-500">Manage procurement and incoming stock.</p>
         </div>
-      </motion.div>
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl font-semibold shadow-xl shadow-slate-200 transition-all transform hover:scale-[1.02]"
+        >
+          <FiPlus size={20} />
+          <span>New Order</span>
+        </button>
+      </div>
 
-      {/* Create PO Modal */}
+      {/* Stats Cards (Mock Data for Visuals) */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Total Orders</h3>
+            <p className="text-3xl font-bold text-slate-900">{orders.length}</p>
+         </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Pending</h3>
+            <p className="text-3xl font-bold text-amber-500">{orders.filter(o => o.payment_status === 'Pending').length}</p>
+         </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Received</h3>
+            <p className="text-3xl font-bold text-emerald-500">{orders.filter(o => o.payment_status === 'Received').length}</p>
+         </div>
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Total Value</h3>
+            <p className="text-3xl font-bold text-indigo-600">
+                ${orders.reduce((acc, o) => acc + parseFloat(o.total_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+         </div>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
+        <div className="relative w-full md:w-96">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <FiSearch />
+            </div>
+            <input 
+                type="text" 
+                placeholder="Search PO # or Supplier..." 
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+            />
+        </div>
+        
+        <div className="flex items-center gap-2 w-full md:w-auto">
+             <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                <FiFilter className="text-slate-400" />
+                <select 
+                    className="bg-transparent outline-none text-sm font-medium text-slate-600"
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                >
+                    <option value="all">All Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Received">Received</option>
+                </select>
+             </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
+              <tr>
+                {["PO Number", "Supplier", "Warehouse", "Order Date", "Status", "Total", "Action"].map((h) => (
+                  <th key={h} className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+                {isLoading && orders.length === 0 ? (
+                    <tr>
+                        <td colSpan="7" className="px-6 py-12 text-center text-slate-400">
+                             <LoadingSpinner message="Loading orders..." />
+                        </td>
+                    </tr>
+                ) : filteredOrders.length === 0 ? (
+                    <tr>
+                         <td colSpan="7" className="px-6 py-12 text-center text-slate-400">
+                            No orders found matching your criteria.
+                        </td>
+                    </tr>
+                ) : filteredOrders.map((order) => (
+                    <tr key={order.purchase_id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-4 text-sm font-medium text-indigo-600">
+                            {order.invoice_no}
+                        </td>
+                         <td className="px-6 py-4 text-sm text-slate-600">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                                    {order.supplier?.name?.charAt(0) || "S"}
+                                </div>
+                                {order.supplier?.name}
+                            </div>
+                        </td>
+                         <td className="px-6 py-4 text-sm text-slate-600">
+                             {order.warehouse?.name}
+                        </td>
+                         <td className="px-6 py-4 text-sm text-slate-500">
+                            {new Date(order.purchase_date).toLocaleDateString()}
+                        </td>
+                         <td className="px-6 py-4">
+                            <StatusBadge status={order.payment_status || "Pending"} />
+                        </td>
+                         <td className="px-6 py-4 text-sm font-semibold text-slate-900">
+                             ${parseFloat(order.total_amount).toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4">
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                    onClick={() => handleOpenModal(order)}
+                                    className="p-1.5 text-indigo-600 hover:bg-white bg-indigo-50 rounded-lg transition-colors shadow-sm"
+                                    title="Edit"
+                                >
+                                    <FiEdit2 size={16} />
+                                </button>
+                                 {(order.payment_status !== "Received" && order.payment_status !== "Paid") && (
+                                     <button 
+                                        onClick={() => handleReceive(order.purchase_id)}
+                                        className="p-1.5 text-emerald-600 hover:bg-white bg-emerald-50 rounded-lg transition-colors shadow-sm"
+                                        title="Mark Received"
+                                     >
+                                        <FiCheckCircle size={16} />
+                                     </button>
+                                 )}
+                                <button 
+                                     onClick={() => handleDeleteOrder(order.purchase_id)}
+                                    className="p-1.5 text-red-600 hover:bg-white bg-red-50 rounded-lg transition-colors shadow-sm"
+                                    title="Delete"
+                                >
+                                    <FiTrash2 size={16} />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal - Create/Edit */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={
           <>
-            <FiPlusCircle className="w-6 h-6" /> New Purchase Order
+            {editingOrder ? <FiEdit2 className="text-indigo-500" /> : <FiPlus className="text-indigo-500" />}
+            {editingOrder ? "Edit Purchase Order" : "Create Purchase Order"}
           </>
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              PO Number
-            </label>
-            <input
-              type="text"
-              placeholder="PO-1004"
-              value={poNumber}
-              onChange={(e) => setPoNumber(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Supplier Name
-            </label>
-            <select
-              value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            >
-              <option value="" disabled>
-                Select a supplier
-              </option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Warehouse
-            </label>
-            <select
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            >
-              <option value="" disabled>
-                Select a warehouse
-              </option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Order Date
-            </label>
-            <input
-              type="date"
-              value={orderDate}
-              onChange={(e) => setOrderDate(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Expected Date
-            </label>
-            <input
-              type="date"
-              value={expectedDate}
-              onChange={(e) => setExpectedDate(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-        </div>
+         <div className="space-y-8">
+            {/* Top Details */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">PO Number</label>
+                    <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        value={poNumber}
+                        onChange={e => setPoNumber(e.target.value)}
+                        placeholder="PO-XXXX"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Supplier</label>
+                     <div className="relative">
+                        <FiUser className="absolute left-3 top-3 text-slate-400" />
+                        <select 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none"
+                            value={supplierId}
+                            onChange={e => setSupplierId(e.target.value)}
+                        >
+                            <option value="" disabled>Select Supplier</option>
+                            {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.name}</option>)}
+                        </select>
+                     </div>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Warehouse</label>
+                    <div className="relative">
+                        <FiMapPin className="absolute left-3 top-3 text-slate-400" />
+                        <select 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none"
+                            value={warehouseId}
+                            onChange={e => setWarehouseId(e.target.value)}
+                        >
+                            <option value="" disabled>Select Warehouse</option>
+                            {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
+                        </select>
+                    </div>
+                 </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Order Date</label>
+                    <div className="relative">
+                         <FiCalendar className="absolute left-3 top-3 text-slate-400" />
+                         <input 
+                            type="date" 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                            value={orderDate}
+                            onChange={e => setOrderDate(e.target.value)}
+                        />
+                    </div>
+                 </div>
+            </div>
 
-        {/* Items Table */}
-        <div className="mt-6">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold text-lg text-slate-700">
-              Order Items
-            </h3>
-            <button
-              onClick={addItem}
-              className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-200 transition-colors"
-            >
-              + Add Item
-            </button>
-          </div>
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="p-3 w-2/5 text-left text-xs font-semibold text-slate-500 uppercase">
-                    Product
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-slate-500 uppercase">
-                    Qty
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-slate-500 uppercase">
-                    Cost ($)
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-slate-500 uppercase">
-                    Subtotal ($)
-                  </th>
-                  <th className="p-3 w-auto text-center text-xs font-semibold text-slate-500 uppercase">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {orderItems.map((item, index) => (
-                  <tr key={item.key}>
-                    <td className="p-2">
-                      <select
-                        value={item.product_id}
-                        onChange={(e) =>
-                          updateItem(index, "product_id", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        required
-                      >
-                        <option value="" disabled>
-                          Select a product
-                        </option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          updateItem(index, "quantity", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.cost_price}
-                        onChange={(e) =>
-                          updateItem(index, "cost_price", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="p-2 text-sm text-slate-800 font-medium">
-                      {item.subtotal.toFixed(2)}
-                    </td>
-                    <td className="p-2 text-center">
-                      <button
-                        onClick={() => removeItem(item.key)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <FiTrash2 />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            {/* Items Section */}
+            <div>
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800 text-lg">Order Items</h3>
+                    <button 
+                        onClick={addItem}
+                        className="text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-200"
+                    >
+                        + Add Item
+                    </button>
+                 </div>
+                 
+                 <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left">
+                         <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-5/12">Product</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Quantity</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Cost ($)</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Subtotal</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-1/12 text-center">Action</th>
+                            </tr>
+                        </thead>
+                         <tbody className="divide-y divide-slate-100 bg-white">
+                             {orderItems.map((item, index) => (
+                                 <tr key={item.key}>
+                                     <td className="px-4 py-2">
+                                         <select 
+                                            value={item.product_id} 
+                                            onChange={e => updateItem(index, "product_id", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         >
+                                             <option value="" disabled>Select Product...</option>
+                                             {products.map(p => (
+                                                 <option key={p.product_id} value={p.product_id}>{p.name}</option>
+                                             ))}
+                                         </select>
+                                     </td>
+                                     <td className="px-4 py-2">
+                                         <input 
+                                            type="number" 
+                                            min="1"
+                                            value={item.quantity}
+                                            onChange={e => updateItem(index, "quantity", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         />
+                                     </td>
+                                     <td className="px-4 py-2">
+                                         <input 
+                                            type="number" 
+                                            min="0"
+                                            step="0.01"
+                                            value={item.cost_price}
+                                            onChange={e => updateItem(index, "cost_price", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         />
+                                     </td>
+                                     <td className="px-4 py-2 text-sm font-semibold text-slate-700">
+                                         ${item.subtotal.toFixed(2)}
+                                     </td>
+                                     <td className="px-4 py-2 text-center">
+                                         <button 
+                                            onClick={() => removeItem(item.key)}
+                                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                         >
+                                             <FiTrash2 />
+                                         </button>
+                                     </td>
+                                 </tr>
+                             ))}
+                             {orderItems.length === 0 && (
+                                 <tr>
+                                     <td colSpan="5" className="px-4 py-8 text-center text-slate-400 italic">
+                                         No items added. Click "Add Item" to start.
+                                     </td>
+                                 </tr>
+                             )}
+                         </tbody>
+                         <tfoot className="bg-slate-50 border-t border-slate-200">
+                             <tr>
+                                 <td colSpan="3" className="px-4 py-3 text-right font-bold text-slate-600">Total:</td>
+                                 <td className="px-4 py-3 font-bold text-indigo-600 text-lg">${calculateTotal().toFixed(2)}</td>
+                                 <td></td>
+                             </tr>
+                         </tfoot>
+                    </table>
+                 </div>
+            </div>
 
-        <div className="text-right mt-5 text-2xl font-bold text-slate-800">
-          Total: ${calculateTotal().toFixed(2)}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-slate-200">
-          <button
-            onClick={() => setIsModalOpen(false)}
-            className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-lg font-semibold text-sm hover:bg-slate-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmitNewOrder}
-            className="bg-green-600 text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-md hover:bg-green-700 transition-colors"
-          >
-            Create PO
-          </button>
-        </div>
+             {/* Footer Actions */}
+            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
+                <button 
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                    Cancel
+                </button>
+                 <button 
+                    onClick={handleSubmit}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                    {isLoading ? <FiLoader className="animate-spin" /> : <FiCheckCircle />}
+                    {editingOrder ? "Update Order" : "Create Order"}
+                </button>
+            </div>
+         </div>
       </Modal>
-    </>
+    </div>
   );
 }

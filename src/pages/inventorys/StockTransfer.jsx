@@ -1,46 +1,69 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   FiPackage,
   FiPlus,
   FiTrash2,
   FiSave,
   FiRefreshCw,
+  FiLoader,
+  FiArrowRight,
+  FiTruck,
+  FiCalendar,
+  FiAlertTriangle,
+  FiFileText,
 } from "react-icons/fi";
+import { useDispatch, useSelector } from "react-redux";
+import { transferStock, selectStockStatus, selectStockError, clearStockError } from "../../redux/slices/stockSlice";
+import { selectAllWarehouses, fetchWarehouses, selectWarehouseStatus } from "../../redux/slices/warehouseSlice";
+import { selectAllProducts, fetchProducts, selectProductStatus } from "../../redux/slices/productSlice";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
 
+/**
+ * Stock Transfer Page
+ * Handles moving inventory between warehouses.
+ * Theme: Purple/Indigo
+ */
 export default function StockTransferPage() {
+  const dispatch = useDispatch();
+
+  // Redux Selectors
+  const warehouses = useSelector(selectAllWarehouses);
+  const products = useSelector(selectAllProducts);
+  const status = useSelector(selectStockStatus);
+  const productStatus = useSelector(selectProductStatus);
+  const warehouseStatus = useSelector(selectWarehouseStatus);
+  const error = useSelector(selectStockError);
+
+  const isLoading = status === 'loading' || productStatus === 'loading' || warehouseStatus === 'loading';
+
   const [transfer, setTransfer] = useState({
     from_warehouse_id: "",
     to_warehouse_id: "",
-    transfer_date: new Date().toISOString().slice(0, 10), // Default to today
-    reference_no: "TRF-2025-0012",
-    notes: "",
-    items: [],
+    transfer_date: new Date().toISOString().slice(0, 10),
+    note: "",
+    items: [{ product_id: "", quantity: 1 }],
   });
 
-  // State for warehouses and products, to be fetched from an API
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
-
-  // Simulate fetching data on component mount
+  // Fetch Master Data
   useEffect(() => {
-    // Fetch warehouses
-    setWarehouses([
-      { id: 1, name: "Main Warehouse" },
-      { id: 2, name: "Branch A" },
-      { id: 3, name: "Branch B" },
-    ]);
+    dispatch(fetchWarehouses());
+    dispatch(fetchProducts());
+    
+    return () => {
+        dispatch(clearStockError());
+    };
+  }, [dispatch]);
 
-    // Fetch products
-    setProducts([
-      { id: 1, name: "iPhone 15 Pro" },
-      { id: 2, name: "Samsung Galaxy S25" },
-      { id: 3, name: "MacBook Pro 16-inch" },
-    ]);
+  // Derived State
+  const availableToWarehouses = useMemo(() => {
+    if (!transfer.from_warehouse_id) return warehouses;
+    // Don't show the warehouse we are transferring FROM in the TO list
+    return warehouses.filter(
+      (w) => w.warehouse_id !== parseInt(transfer.from_warehouse_id)
+    );
+  }, [warehouses, transfer.from_warehouse_id]);
 
-    // In a real app, you might fetch the next reference number here
-    // setTransfer(prev => ({...prev, reference_no: 'TRF-2025-0013'}));
-  }, []);
-
+  // Handlers
   const handleTransferChange = (field, value) => {
     setTransfer((prev) => ({ ...prev, [field]: value }));
   };
@@ -48,48 +71,65 @@ export default function StockTransferPage() {
   const handleAddItem = () => {
     setTransfer((prev) => ({
       ...prev,
-      items: [
-        ...prev.items,
-        { product_id: "", product_name: "", quantity: 1, unit: "PCS" },
-      ],
+      items: [...prev.items, { product_id: "", quantity: 1 }],
     }));
   };
 
   const handleRemoveItem = (index) => {
-    setTransfer((prev) => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index),
-    }));
+    if (transfer.items.length > 1) {
+      setTransfer((prev) => ({
+        ...prev,
+        items: prev.items.filter((_, i) => i !== index),
+      }));
+    }
   };
 
   const handleItemChange = (index, field, value) => {
     setTransfer((prev) => {
       const newItems = prev.items.map((item, i) => {
         if (i !== index) return item;
-
-        const updatedItem = { ...item };
-        if (field === "product_id") {
-          const selectedProduct = products.find(
-            (p) => p.id === parseInt(value)
-          );
-          updatedItem.product_id = parseInt(value) || "";
-          updatedItem.product_name = selectedProduct
-            ? selectedProduct.name
-            : "";
-          updatedItem.unit = selectedProduct ? "PCS" : ""; // Assuming default unit
-        } else if (field === "quantity") {
-          updatedItem.quantity = parseInt(value, 10) || 0;
-        }
-        return updatedItem;
+        const updatedValue = field === "quantity" ? (parseInt(value) || 0) : value;
+        return { ...item, [field]: updatedValue };
       });
       return { ...prev, items: newItems };
     });
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    console.log("Transfer data:", transfer);
-    // TODO: Send POST request to /api/stock-transfers
+
+    const validItems = transfer.items.filter(
+      (item) => item.product_id && item.quantity > 0
+    );
+
+    if (validItems.length === 0) {
+      alert("Please add at least one valid product to the transfer.");
+      return;
+    }
+
+    if (transfer.from_warehouse_id === transfer.to_warehouse_id) {
+       alert("Source and Destination warehouses cannot be the same.");
+       return;
+    }
+
+    const payload = {
+        from_warehouse_id: parseInt(transfer.from_warehouse_id),
+        to_warehouse_id: parseInt(transfer.to_warehouse_id),
+        transfer_date: transfer.transfer_date,
+        note: transfer.note,
+        items: validItems.map(item => ({
+            product_id: parseInt(item.product_id),
+            quantity: parseInt(item.quantity)
+        }))
+    };
+
+    try {
+      await dispatch(transferStock(payload)).unwrap();
+      alert("Stock transfer created successfully!");
+      handleClear();
+    } catch (err) {
+      console.error("Save Error:", err);
+    }
   };
 
   const handleClear = () => {
@@ -97,276 +137,216 @@ export default function StockTransferPage() {
       from_warehouse_id: "",
       to_warehouse_id: "",
       transfer_date: new Date().toISOString().slice(0, 10),
-      reference_no: "TRF-2025-0012", // Or fetch new one
-      notes: "",
-      items: [],
+      note: "",
+      items: [{ product_id: "", quantity: 1 }],
     });
+    dispatch(clearStockError());
   };
 
-  // UI: Check for form validity
-  const isFormInvalid =
-    !transfer.from_warehouse_id ||
-    !transfer.to_warehouse_id ||
-    transfer.items.length === 0;
-
   return (
-    <div className="p-4 sm:p-6 font-sans">
-      <div className=" mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* Panel Header */}
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-            <FiPackage className="text-purple-600" />
-            Stock Transfer
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage the movement of stock between different warehouses.
-          </p>
+    <div className="p-6 max-w-6xl mx-auto font-sans">
+      {isLoading && transfer.items.length <= 1 ? (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12">
+            <LoadingSpinner message="Loading Master Data..." />
+          </div>
+      ) : (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        
+        {/* Header */}
+        <div className="px-8 py-6 border-b border-gray-100 bg-purple-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              <span className="p-2 bg-purple-100 text-purple-700 rounded-lg">
+                <FiTruck size={24} />
+              </span>
+              Stock Transfer
+            </h1>
+            <p className="mt-1 text-gray-500 text-sm">
+              Move inventory between your warehouses efficiently.
+            </p>
+          </div>
         </div>
 
-        <form onSubmit={handleSave}>
-          {/* Section 1: Transfer Details Form */}
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div>
-                <label
-                  htmlFor="from_warehouse"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  From Warehouse
-                </label>
-                <select
-                  id="from_warehouse"
-                  className="block w-full p-2 rounded-md border border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                  value={transfer.from_warehouse_id}
-                  onChange={(e) =>
-                    handleTransferChange("from_warehouse_id", e.target.value)
-                  }
-                  required
-                >
-                  <option value="">Select Source</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Error Alert */}
+        {error && (
+            <div className="mx-8 mt-6 p-4 bg-red-50 border border-red-100 text-red-700 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <FiAlertTriangle className="shrink-0" size={20} />
+            <span className="font-medium">{typeof error === 'string' ? error : JSON.stringify(error)}</span>
+            </div>
+        )}
 
-              <div>
-                <label
-                  htmlFor="to_warehouse"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  To Warehouse
-                </label>
-                <select
-                  id="to_warehouse"
-                  className="block w-full p-2 rounded-md border border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                  value={transfer.to_warehouse_id}
-                  onChange={(e) =>
-                    handleTransferChange("to_warehouse_id", e.target.value)
-                  }
-                  required
-                >
-                  <option value="">Select Destination</option>
-                  {warehouses
-                    .filter(
-                      (w) => w.id !== parseInt(transfer.from_warehouse_id)
-                    )
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
+        <form onSubmit={handleSave} className="p-8">
+            
+          {/* Transfer Details */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8 items-start">
+            
+            {/* From */}
+            <div className="lg:col-span-4 space-y-2">
+              <label className="text-sm font-semibold text-gray-700">From Source <span className="text-red-500">*</span></label>
+              <select
+                value={transfer.from_warehouse_id}
+                onChange={(e) => handleTransferChange("from_warehouse_id", e.target.value)}
+                required
+                className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all outline-none"
+              >
+                <option value="">Select Origin Warehouse</option>
+                {warehouses.map((w) => (
+                  <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="transfer_date"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Transfer Date
-                </label>
+            {/* Arrow Divider */}
+            <div className="lg:col-span-1 flex justify-center pt-8 text-gray-400">
+               <FiArrowRight size={24} className="hidden lg:block rotate-0" />
+               <FiArrowRight size={24} className="block lg:hidden rotate-90" />
+            </div>
+
+            {/* To */}
+            <div className="lg:col-span-4 space-y-2">
+              <label className="text-sm font-semibold text-gray-700">To Destination <span className="text-red-500">*</span></label>
+              <select
+                value={transfer.to_warehouse_id}
+                onChange={(e) => handleTransferChange("to_warehouse_id", e.target.value)}
+                required
+                className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all outline-none"
+              >
+                <option value="">Select Destination Warehouse</option>
+                {availableToWarehouses.map((w) => (
+                  <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date */}
+            <div className="lg:col-span-3 space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Date <span className="text-red-500">*</span></label>
+              <div className="relative">
+                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                  <FiCalendar />
+                </div>
                 <input
-                  type="date"
-                  id="transfer_date"
-                  className="block w-full p-2 rounded-md border border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                  value={transfer.transfer_date}
-                  onChange={(e) =>
-                    handleTransferChange("transfer_date", e.target.value)
-                  }
-                  required
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="reference_no"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Reference No.
-                </label>
-                <input
-                  type="text"
-                  id="reference_no"
-                  className="block w-full p-2 rounded-md border border-gray-300 bg-gray-100 shadow-sm focus:outline-none"
-                  value={transfer.reference_no}
-                  readOnly
+                    type="date"
+                    value={transfer.transfer_date}
+                    onChange={(e) => handleTransferChange("transfer_date", e.target.value)}
+                    required
+                    className="w-full h-11 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all outline-none"
                 />
               </div>
             </div>
+
+             <div className="lg:col-span-12 space-y-2">
+               <label className="text-sm font-semibold text-gray-700">Notes (Optional)</label>
+               <input
+                  type="text"
+                  value={transfer.note}
+                  onChange={(e) => handleTransferChange("note", e.target.value)}
+                  placeholder="e.g. Restocking main branch..."
+                  className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all outline-none"
+                />
+            </div>
           </div>
 
-          {/* Section 2: Product Items Table */}
-          <div className="p-6 border-t border-gray-200">
+          {/* Items Table */}
+          <div className="mb-8">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">Products</h2>
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <FiPackage className="text-purple-600" />
+                Products to Move
+              </h3>
               <button
                 type="button"
                 onClick={handleAddItem}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-semibold transition-colors"
               >
-                <FiPlus /> Add Product
+                <FiPlus size={16} /> Add Product
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full">
-                <thead className="bg-slate-100">
+            <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
                   <tr>
-                    <th className="p-3 text-left text-sm font-semibold text-slate-600 uppercase w-12">
-                      #
-                    </th>
-                    <th className="p-3 text-left text-sm font-semibold text-slate-600 uppercase w-2/5">
-                      Product
-                    </th>
-                    <th className="p-3 text-left text-sm font-semibold text-slate-600 uppercase">
-                      Quantity
-                    </th>
-                    <th className="p-3 text-left text-sm font-semibold text-slate-600 uppercase">
-                      Unit
-                    </th>
-                    <th className="p-3 text-center text-sm font-semibold text-slate-600 uppercase">
-                      Action
-                    </th>
+                     <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12 text-center">#</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-2/5">Product</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transfer Quantity</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-16 text-center">Remove</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {transfer.items.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="p-6 text-center text-gray-500">
-                        No products have been added for transfer.
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {transfer.items.map((item, index) => (
+                    <tr key={index} className="hover:bg-gray-50/50 transition-colors group">
+                      <td className="py-3 px-4 text-center text-sm text-gray-500">{index + 1}</td>
+                      <td className="py-3 px-4">
+                        <select
+                          value={item.product_id}
+                          onChange={(e) => handleItemChange(index, "product_id", e.target.value)}
+                          required
+                          className="w-full h-10 px-3 bg-white border border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition-all text-sm"
+                        >
+                          <option value="">Select Product...</option>
+                          {products.map((p) => (
+                            <option key={p.product_id} value={p.product_id}>
+                                {p.name} ({p.sku || 'N/A'})
+                            </option>
+                          ))}
+                        </select>
                       </td>
-                    </tr>
-                  ) : (
-                    transfer.items.map((item, index) => (
-                      <tr key={index} className="hover:bg-slate-50">
-                        <td className="p-2 text-center text-slate-500">
-                          {index + 1}
-                        </td>
-                        <td className="p-2">
-                          <select
-                            value={item.product_id}
-                            onChange={(e) =>
-                              handleItemChange(
-                                index,
-                                "product_id",
-                                e.target.value
-                              )
-                            }
-                            className="border p-2 w-full rounded-md focus:ring-2 focus:ring-blue-500"
-                            required
-                          >
-                            <option value="">Select Product</option>
-                            {products.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              handleItemChange(
-                                index,
-                                "quantity",
-                                e.target.value
-                              )
-                            }
-                            className="border p-2 w-full rounded-md focus:ring-2 focus:ring-blue-500"
-                            required
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={item.unit}
-                            readOnly
-                            className="border p-2 w-full rounded-md bg-slate-100"
-                          />
-                        </td>
-                        <td className="p-2 text-center">
+                      <td className="py-3 px-4">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
+                          required
+                          className="w-full h-10 px-3 bg-white border border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition-all text-sm"
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {transfer.items.length > 1 && (
                           <button
                             type="button"
                             onClick={() => handleRemoveItem(index)}
-                            className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition"
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                             title="Remove item"
                           >
-                            <FiTrash2 />
+                            <FiTrash2 size={16} />
                           </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+             {transfer.items.length === 0 && (
+              <div className="p-8 text-center text-gray-400 bg-gray-50/30 border border-t-0 border-gray-200 rounded-b-xl border-dashed">
+                No items added. Click "Add Product" to start.
+              </div>
+            )}
           </div>
 
-          {/* Section 3: Notes & Actions */}
-          <div className="p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-            <div className="mb-6">
-              <label
-                htmlFor="notes"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Notes
-              </label>
-              <textarea
-                id="notes"
-                className="block w-full p-2 rounded-md border border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                placeholder="Optional notes about the transfer..."
-                rows="3"
-                value={transfer.notes}
-                onChange={(e) => handleTransferChange("notes", e.target.value)}
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
+          {/* Footer & Actions */}
+          <div className="flex justify-end items-center gap-4 pt-6 border-t border-gray-100">
+            <button
                 type="button"
                 onClick={handleClear}
-                className="inline-flex justify-center items-center gap-2 py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-              >
-                <FiRefreshCw /> Clear
-              </button>
-              <button
+                className="px-6 py-3 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+            >
+                <FiRefreshCw size={18} /> Reset
+            </button>
+            <button
                 type="submit"
-                disabled={isFormInvalid}
-                className="inline-flex justify-center items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                <FiSave />
-                Submit Transfer
-              </button>
-            </div>
+                disabled={status === 'loading'}
+                className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+                {status === 'loading' ? <FiLoader className="animate-spin" /> : <FiSave size={18} />}
+                {status === 'loading' ? "Processing..." : "Confirm Transfer"}
+            </button>
           </div>
         </form>
       </div>
+      )}
     </div>
   );
 }

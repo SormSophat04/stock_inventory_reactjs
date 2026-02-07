@@ -1,482 +1,302 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  FiShoppingCart,
+  FiPackage,
   FiPlus,
   FiTrash2,
   FiSave,
   FiRefreshCw,
+  FiAlertTriangle,
 } from "react-icons/fi";
+import { useDispatch, useSelector } from "react-redux";
+import { createStockOut, selectStockStatus, selectStockError, clearStockError } from "../../redux/slices/stockSlice";
+import { selectAllProducts, fetchProducts, selectProductStatus } from "../../redux/slices/productSlice";
+import { selectAllWarehouses, fetchWarehouses, selectWarehouseStatus } from "../../redux/slices/warehouseSlice";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 /**
- * A modern, responsive form for recording stock-out (sales/dispatch) transactions.
- * It features dynamic item rows, total calculation, and clean UI.
+ * Stock Out / Inventory Deduction Form
+ * Used for removing items for reasons like Damage, Expiration, or Internal Use.
  */
 export default function StockOutPage() {
-  const [items, setItems] = useState([
-    { product_id: "", product_name: "", quantity: 1, price: 0 },
-  ]);
+  const dispatch = useDispatch();
 
-  // State for customers and warehouses, to be fetched from an API
-  const [customers, setCustomers] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
+  // Redux Data
+  const products = useSelector(selectAllProducts);
+  const warehouses = useSelector(selectAllWarehouses);
+  const status = useSelector(selectStockStatus);
+  const productStatus = useSelector(selectProductStatus);
+  const warehouseStatus = useSelector(selectWarehouseStatus);
+  const error = useSelector(selectStockError);
 
-  // Combined state for sale details
-  const [sale, setSale] = useState({
-    customer_id: "",
+  const isLoading = status === 'loading' || productStatus === 'loading' || warehouseStatus === 'loading';
+
+  // Form State
+  const [formData, setFormData] = useState({
     warehouse_id: "",
-    invoice_no: "INV-2025-0015",
-    payment_method: "Cash",
-    payment_status: "Paid",
-    sale_date: new Date().toISOString().slice(0, 10), // Default to today
+    reason: "",
+    note: "",
   });
 
-  // Simulate fetching data on component mount
+  const [items, setItems] = useState([
+    { product_id: "", product_name: "", quantity: 1 },
+  ]);
+
+  // Load Master Data
   useEffect(() => {
-    // In a real app, you'd fetch this from an API
-    // e.g., fetch('/api/customers').then(res => res.json()).then(setCustomers)
-    setCustomers([
-      { id: 1, name: "CyberMart Solutions" },
-      { id: 2, name: "Quantum Innovations" },
-      { id: 3, name: "Apex Global" },
-      { id: 4, name: "Nexus Retail" },
-    ]);
+    dispatch(fetchProducts());
+    dispatch(fetchWarehouses());
+    return () => {
+      dispatch(clearStockError());
+    };
+  }, [dispatch]);
 
-    setWarehouses([
-      { id: 1, name: "Main Warehouse - A" },
-      { id: 2, name: "Secondary Warehouse - B" },
-    ]);
-
-    // Fetch products
-    setProducts([
-      { id: 1, name: "iPhone 15 Pro" },
-      { id: 2, name: "Samsung Galaxy S25" },
-      { id: 3, name: "MacBook Pro 16-inch" },
-    ]);
-    // You might also fetch the next sequential invoice number
-    // e.g., fetch('/api/sales/next-invoice-no')...
-  }, []);
-
-  // Calculate the grand total whenever the items list changes
-  const total = useMemo(() => {
-    return items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-  }, [items]);
-
-  /**
-   * Adds a new, empty item row to the list.
-   */
-  const handleAddRow = () => {
-    setItems([
-      ...items,
-      { product_id: "", product_name: "", quantity: 1, price: 0 },
-    ]);
+  // Handlers
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  /**
-   * Removes an item row by its index.
-   * @param {number} index - The index of the item row to remove.
-   */
-  const handleRemoveRow = (index) => {
-    // Prevent removing the last row
-    if (items.length <= 1) return;
-    const newItems = items.filter((_, i) => i !== index);
-    setItems(newItems);
+  const handleAddItem = () => {
+    setItems([...items, { product_id: "", product_name: "", quantity: 1 }]);
   };
 
-  /**
-   * Updates a specific field for a specific item row.
-   * @param {number} index - The index of the item row.
-   * @param {string} field - The key of the item property to update (e.g., 'quantity').
-   * @param {string|number} value - The new value.
-   */
+  const handleRemoveItem = (index) => {
+    if (items.length > 1) {
+      setItems(items.filter((_, i) => i !== index));
+    }
+  };
+
   const handleItemChange = (index, field, value) => {
-    setItems((prevItems) => {
-      const newItems = prevItems.map((item, i) => {
-        if (i !== index) return item;
-
-        const updatedItem = { ...item };
-        if (field === "product_id") {
-          const selectedProduct = products.find((p) => p.id === parseInt(value));
-          updatedItem.product_id = parseInt(value) || "";
-          updatedItem.product_name = selectedProduct ? selectedProduct.name : "";
-        } else {
-          const numericValue = ["quantity", "price"].includes(field)
-            ? parseFloat(value) || 0
-            : value;
-          updatedItem[field] = numericValue;
-        }
-        return updatedItem;
-      });
+    setItems((prev) => {
+      const newItems = [...prev];
+      if (field === "product_id") {
+        const pid = parseInt(value);
+        const prod = products.find((p) => p.product_id === pid);
+        newItems[index] = {
+          ...newItems[index],
+          product_id: pid || "",
+          product_name: prod ? prod.name : "",
+        };
+      } else {
+        newItems[index] = { ...newItems[index], [field]: value };
+      }
       return newItems;
     });
   };
 
-  /**
-   * Updates a field in the main sale details state.
-   * @param {string} field - The key of the sale property to update (e.g., 'customer_id').
-   * @param {string|number} value - The new value.
-   */
-  const handleSaleChange = (field, value) => {
-    setSale((prev) => ({ ...prev, [field]: value }));
-  };
-
-  /**
-   * Handles saving the form.
-   * @param {React.FormEvent} e - The form submit event.
-   */
-  const handleSave = (e) => {
-    // Prevent the default form submission which reloads the page
+  const handleSave = async (e) => {
     e.preventDefault();
+    if (!formData.warehouse_id || !formData.reason) {
+      alert("Please select a warehouse and a reason.");
+      return;
+    }
+    if (items.some((i) => !i.product_id || i.quantity <= 0)) {
+      alert("Please ensure all items have a valid product and quantity.");
+      return;
+    }
 
-    console.log("Saving Sale:", { ...sale, items, total });
-    // TODO: Add API call to save the sale
-    // Example:
-    // try {
-    //   const response = await api.post('/sales', { ...sale, items, total });
-    //   console.log('Sale saved!', response.data);
-    //   handleClear(); // Clear form on success
-    // } catch (error) {
-    //   console.error('Failed to save sale:', error);
-    // }
+    const payload = {
+      warehouse_id: parseInt(formData.warehouse_id),
+      reason: formData.reason,
+      note: formData.note,
+      items: items.map((i) => ({
+        product_id: parseInt(i.product_id),
+        quantity: parseInt(i.quantity),
+      })),
+    };
+
+    try {
+      await dispatch(createStockOut(payload)).unwrap();
+      alert("Stock deduction recorded successfully!");
+      handleClear();
+    } catch (err) {
+      // Error handled by Redux state
+      console.error("Stock out failed", err);
+    }
   };
 
-  /**
-   * Resets the form to its initial state.
-   */
   const handleClear = () => {
-    setItems([{ product_id: "", product_name: "", quantity: 1, price: 0 }]);
-    setSale((prev) => ({
-      ...prev,
-      customer_id: "",
-      warehouse_id: "",
-      sale_date: new Date().toISOString().slice(0, 10),
-      payment_method: "Cash",
-      payment_status: "Paid",
-      // Keep the invoice number as it might be fetched, or reset if needed
-      // invoice_no: "INV-2025-0016"
-    }));
-  };
-
-  // Helper function to format currency
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
+    setFormData({ warehouse_id: "", reason: "", note: "" });
+    setItems([{ product_id: "", product_name: "", quantity: 1 }]);
+    dispatch(clearStockError());
   };
 
   return (
-    <div className="p-4 sm:p-6 font-sans">
-      <div className=" mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* Card Header */}
-        <div className="p-6 sm:p-8 border-b border-slate-200">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
-            <FiShoppingCart className="text-indigo-600" />
-            Stock-Out (Sales / Dispatch)
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Record product dispatches and sales transactions.
-          </p>
+    <div className="p-6 max-w-6xl mx-auto font-sans">
+      {isLoading && items.length <= 1 ? (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12">
+            <LoadingSpinner message="Loading Master Data..." />
+          </div>
+      ) : (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        
+        {/* Header */}
+        <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              <span className="p-2 bg-red-100/50 text-red-600 rounded-lg">
+                 <FiPackage size={24} />
+              </span>
+              Inventory Deduction
+            </h1>
+            <p className="mt-1 text-gray-500 text-sm">
+              Record stock removed from inventory due to damage, expiration, or internal use.
+            </p>
+          </div>
         </div>
 
-        <form onSubmit={handleSave}>
-          {/* Sale Details Section */}
-          <div className="p-6 sm:p-8">
-            <h2 className="text-lg font-semibold leading-6 text-slate-900 mb-6">
-              Sale Details
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label
-                  htmlFor="customer_id"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Customer
-                </label>
-                <select
-                  id="customer_id"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-50 text-slate-900 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all duration-150"
-                  value={sale.customer_id}
-                  onChange={(e) =>
-                    handleSaleChange("customer_id", e.target.value)
-                  }
-                  required
-                >
-                  <option value="">Select Customer</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Error Alert */}
+        {error && (
+          <div className="mx-8 mt-6 p-4 bg-red-50 border border-red-100 text-red-700 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <FiAlertTriangle className="shrink-0" size={20} />
+            <span className="font-medium">{typeof error === 'string' ? error : JSON.stringify(error)}</span>
+          </div>
+        )}
 
-              <div>
-                <label
-                  htmlFor="warehouse_id"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Warehouse
-                </label>
-                <select
-                  id="warehouse_id"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-50 text-slate-900 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all duration-150"
-                  value={sale.warehouse_id}
-                  onChange={(e) =>
-                    handleSaleChange("warehouse_id", e.target.value)
-                  }
-                  required
-                >
-                  <option value="">Select Warehouse</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="sale_date"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Sale Date
-                </label>
-                <input
-                  type="date"
-                  id="sale_date"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-50 text-slate-900 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all duration-150"
-                  value={sale.sale_date}
-                  onChange={(e) =>
-                    handleSaleChange("sale_date", e.target.value)
-                  }
-                />
-              </div>
+        <form onSubmit={handleSave} className="p-8">
+          {/* Main Details */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Warehouse <span className="text-red-500">*</span></label>
+              <select
+                name="warehouse_id"
+                value={formData.warehouse_id}
+                onChange={handleFormChange}
+                required
+                className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all outline-none"
+              >
+                <option value="">Select Warehouse</option>
+                {warehouses.map((w) => (
+                  <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>
+                ))}
+              </select>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-              <div>
-                <label
-                  htmlFor="invoice_no"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Invoice No
-                </label>
-                <input
-                  type="text"
-                  id="invoice_no"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-100 font-medium text-slate-500 ring-1 ring-inset ring-slate-200 focus:ring-1 focus:ring-inset focus:ring-slate-200 sm:text-sm sm:leading-6"
-                  value={sale.invoice_no}
-                  readOnly
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Reason <span className="text-red-500">*</span></label>
+              <select
+                name="reason"
+                value={formData.reason}
+                onChange={handleFormChange}
+                required
+                className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all outline-none"
+              >
+                <option value="">Select Reason</option>
+                <option value="Damaged">Damaged</option>
+                <option value="Expired">Expired</option>
+                <option value="Internal Use">Internal Use</option>
+                <option value="Lost">Lost / Stolen</option>
+                <option value="Adjustment">Adjustment</option>
+              </select>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="payment_method"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Payment Method
-                </label>
-                <select
-                  id="payment_method"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-50 text-slate-900 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all duration-150"
-                  value={sale.payment_method}
-                  onChange={(e) =>
-                    handleSaleChange("payment_method", e.target.value)
-                  }
-                  required
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="Card">Card</option>
-                  <option value="Credit">Credit</option>
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="payment_status"
-                  className="block text-sm font-medium leading-6 text-slate-700 mb-2"
-                >
-                  Payment Status
-                </label>
-                <select
-                  id="payment_status"
-                  className="block w-full rounded-lg border-0 py-2.5 px-3.5 bg-slate-50 text-slate-900 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all duration-150"
-                  value={sale.payment_status}
-                  onChange={(e) =>
-                    handleSaleChange("payment_status", e.target.value)
-                  }
-                  required
-                >
-                  <option value="Paid">Paid</option>
-                  <option value="Unpaid">Unpaid</option>
-                  <option value="Partial">Partial</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Note</label>
+              <input
+                type="text"
+                name="note"
+                value={formData.note}
+                onChange={handleFormChange}
+                placeholder="Optional description..."
+                className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all outline-none"
+              />
             </div>
           </div>
 
-          {/* Items Table Section */}
-          <div className="p-6 sm:p-8 border-t border-slate-200">
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-lg font-semibold leading-6 text-slate-900">
-                Items
-              </h2>
+          {/* Items Table */}
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Items to Remove</h3>
               <button
                 type="button"
-                onClick={handleAddRow}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all"
+                onClick={handleAddItem}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
               >
-                <FiPlus /> Add Item
+                <FiPlus size={16} /> Add Product
               </button>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
+
+            <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
                   <tr>
-                    <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-12">
-                      #
-                    </th>
-                    <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-2/5">
-                      Product
-                    </th>
-                    <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Quantity
-                    </th>
-                    <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Price
-                    </th>
-                    <th className="p-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Subtotal
-                    </th>
-                    <th className="p-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12 text-center">#</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Product</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Quantity</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-20 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {items.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="p-6 text-center text-slate-500"
-                      >
-                        No items have been added yet.
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {items.map((item, index) => (
+                    <tr key={index} className="hover:bg-gray-50/50 transition-colors group">
+                      <td className="py-3 px-4 text-center text-sm text-gray-500">{index + 1}</td>
+                      <td className="py-3 px-4">
+                        <select
+                          value={item.product_id}
+                          onChange={(e) => handleItemChange(index, "product_id", e.target.value)}
+                          required
+                          className="w-full h-10 px-3 bg-white border border-gray-200 rounded-lg focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all text-sm"
+                        >
+                          <option value="">Select Product...</option>
+                          {products.map((p) => (
+                            <option key={p.product_id} value={p.product_id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-3 px-4">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
+                          required
+                          className="w-full h-10 px-3 bg-white border border-gray-200 rounded-lg focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all text-sm"
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(index)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Remove item"
+                          >
+                            <FiTrash2 size={16} />
+                          </button>
+                        )}
                       </td>
                     </tr>
-                  ) : (
-                    items.map((item, index) => (
-                      <tr
-                        key={index}
-                        className="hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="p-2 text-center text-sm text-slate-500">
-                          {index + 1}
-                        </td>
-                        <td className="p-2">
-                          <select
-                            type="number" // Changed to number for product_id
-                            value={item.product_id}
-                            onChange={(e) =>
-                              handleItemChange(
-                                index,
-                                "product_id",
-                                e.target.value
-                              )
-                            }
-                            className="block w-full rounded-md border-0 py-1.5 px-2.5 bg-white text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
-                            required
-                          >
-                            <option value="">Select Product</option>
-                            {products.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            min="1"
-                            onChange={(e) =>
-                              handleItemChange(
-                                index,
-                                "quantity",
-                                e.target.value
-                              )
-                            }
-                            className="block w-full rounded-md border-0 py-1.5 px-2.5 bg-white text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            value={item.price}
-                            min="0"
-                            step="0.01"
-                            onChange={(e) =>
-                              handleItemChange(index, "price", e.target.value)
-                            }
-                            className="block w-full rounded-md border-0 py-1.5 px-2.5 bg-white text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
-                          />
-                        </td>
-                        <td className="p-2 text-right text-sm text-slate-700 font-medium">
-                          {formatCurrency(item.quantity * item.price)}
-                        </td>
-                        <td className="p-2 text-center">
-                          {items.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveRow(index)}
-                              className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-100 transition-all"
-                              title="Remove row"
-                            >
-                              <FiTrash2 size={16} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
+            {items.length === 0 && (
+              <div className="p-8 text-center text-gray-400 bg-gray-50/30 border border-t-0 border-gray-200 rounded-b-xl border-dashed">
+                No items added. Click "Add Product" to start.
+              </div>
+            )}
           </div>
 
-          {/* Card Footer */}
-          <div className="p-6 bg-slate-50 rounded-b-xl border-t border-slate-200">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-              <div className="text-right sm:text-left">
-                <span className="text-base font-medium text-slate-600">
-                  Grand Total:
-                </span>
-                <span className="text-3xl font-bold tracking-tight text-slate-900 ml-2">
-                  {formatCurrency(total)}
-                </span>
-              </div>
-              <div className="flex space-x-3 justify-end">
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="inline-flex justify-center items-center gap-2 py-2 px-4 border border-slate-300 rounded-lg shadow-sm bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-all"
-                >
-                  <FiRefreshCw size={16} /> Clear
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-2 rounded-lg shadow-md hover:bg-green-700 transition-all font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-slate-400 disabled:cursor-not-allowed"
-                >
-                  <FiSave size={16} /> Save Sale
-                </button>
-              </div>
-            </div>
+          {/* Footer Actions */}
+          <div className="flex justify-end items-center gap-4 pt-6 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={handleClear}
+              className="px-6 py-3 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+            >
+              <FiRefreshCw size={18} /> Reset
+            </button>
+            <button
+              type="submit"
+              disabled={status === 'loading'}
+              className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-500/20 transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {status === 'loading' ? 'Processing...' : <><FiSave size={18} /> Confirm Deduction</>}
+            </button>
           </div>
         </form>
       </div>
+      )}
     </div>
   );
 }

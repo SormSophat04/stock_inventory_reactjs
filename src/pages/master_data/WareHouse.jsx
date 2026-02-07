@@ -1,5 +1,17 @@
-import React, { useState, useEffect } from "react";
-import { FiPlus, FiEdit, FiTrash2, FiX } from "react-icons/fi";
+import React, { useState, useEffect, useContext } from "react";
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiHome, FiSearch, FiMapPin } from "react-icons/fi";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
+import { AuthContext } from "../../contexts/AuthContext";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchWarehouses,
+  addWarehouse,
+  updateWarehouse,
+  deleteWarehouse,
+  selectAllWarehouses,
+  selectWarehouseStatus,
+  selectWarehouseError,
+} from "../../redux/slices/warehouseSlice";
 
 // --- Modal Component for Add/Edit ---
 function WareHouseModal({
@@ -13,32 +25,25 @@ function WareHouseModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300">
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md m-4 transform transition-all duration-300 scale-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-all p-4">
+       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100 flex flex-col">
         {/* --- Modal Header --- */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-slate-900">
-            {warehouse ? "Edit Warehouse" : "Add New Warehouse"}
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-gray-900">
+            {warehouse ? "Edit Warehouse" : "New Warehouse"}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <FiX className="w-6 h-6" />
+            <FiX className="w-5 h-5" />
           </button>
         </div>
 
         {/* --- Modal Form --- */}
-        <form onSubmit={onSubmit}>
-          <div className="space-y-4">
-            {/* --- Name Input --- */}
-            <div>
-              <label
-                htmlFor="name"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Warehouse Name
-              </label>
+        <form onSubmit={onSubmit} className="p-6 space-y-5">
+           <div className="space-y-2">
+              <label htmlFor="name" className="block text-sm font-semibold text-gray-700">Warehouse Name</label>
               <input
                 type="text"
                 id="name"
@@ -46,18 +51,13 @@ function WareHouseModal({
                 value={formData.name}
                 onChange={onFormChange}
                 required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="e.g., Main Warehouse"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                placeholder="e.g. Central Hub"
               />
             </div>
-            {/* --- Location Input --- */}
-            <div>
-              <label
-                htmlFor="location"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Location
-              </label>
+
+            <div className="space-y-2">
+              <label htmlFor="location" className="block text-sm font-semibold text-gray-700">Location</label>
               <input
                 type="text"
                 id="location"
@@ -65,28 +65,27 @@ function WareHouseModal({
                 value={formData.location}
                 onChange={onFormChange}
                 required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="e.g., Phnom Penh"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                placeholder="City or Region"
               />
             </div>
-          </div>
-
-          {/* --- Modal Footer (Actions) --- */}
-          <div className="flex justify-end gap-3 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="py-2 px-4 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition duration-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-200"
-            >
-              Save Warehouse
-            </button>
-          </div>
+          
+            {/* --- Modal Footer (Actions) --- */}
+            <div className="flex justify-end gap-3 pt-4">
+                <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                Cancel
+                </button>
+                <button
+                type="submit"
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/20 transition-all"
+                >
+                {warehouse ? "Update Warehouse" : "Create Warehouse"}
+                </button>
+            </div>
         </form>
       </div>
     </div>
@@ -95,35 +94,23 @@ function WareHouseModal({
 
 // --- Main Warehouse Page Component ---
 export default function WareHouse() {
-  // --- State ---
-  const defaultFormState = { name: "", location: "" };
+  const { user } = useContext(AuthContext);
+  const dispatch = useDispatch();
+  const warehouses = useSelector(selectAllWarehouses);
+  const status = useSelector(selectWarehouseStatus);
+  const error = useSelector(selectWarehouseError);
 
-  const [warehouses, setWarehouses] = useState([
-    {
-      id: 1,
-      name: "Main Warehouse",
-      location: "Phnom Penh",
-      createdAt: "2025-11-08T10:00:00Z",
-    },
-    {
-      id: 2,
-      name: "Siem Reap Branch",
-      location: "Siem Reap",
-      createdAt: "2025-11-09T11:30:00Z",
-    },
-    {
-      id: 3,
-      name: "Battambang Storage",
-      location: "Battambang",
-      createdAt: "2025-11-10T14:00:00Z",
-    },
-  ]);
+  const ROLES = { ADMIN: "admin", MANAGER: "manager" };
+
+  const defaultFormState = { name: "", location: "" };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentWarehouse, setCurrentWarehouse] = useState(null);
   const [formData, setFormData] = useState(defaultFormState);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // --- Effects ---
+  const hasRole = (roles) => user && user.role && roles.includes(user.role);
+
   useEffect(() => {
     if (currentWarehouse) {
       setFormData({
@@ -135,7 +122,12 @@ export default function WareHouse() {
     }
   }, [currentWarehouse]);
 
-  // --- Event Handlers ---
+  useEffect(() => {
+    if (status === "idle") {
+        dispatch(fetchWarehouses());
+    }
+  }, [status, dispatch]);
+
   const handleAddNewClick = () => {
     setCurrentWarehouse(null);
     setFormData(defaultFormState);
@@ -153,104 +145,144 @@ export default function WareHouse() {
     setFormData(defaultFormState);
   };
 
-  const handleDeleteClick = (warehouseId) => {
+  const handleDeleteClick = async (warehouseId) => {
     if (window.confirm("Are you sure you want to delete this warehouse?")) {
-      setWarehouses((prev) => prev.filter((wh) => wh.id !== warehouseId));
+      try {
+        await dispatch(deleteWarehouse(warehouseId)).unwrap();
+      } catch (err) {
+        alert(err.message || "Failed to delete warehouse");
+      }
     }
   };
 
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({ ...prevData, [name]: value }));
-  };
+  const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (currentWarehouse) {
-      setWarehouses((prev) =>
-        prev.map((wh) =>
-          wh.id === currentWarehouse.id ? { ...wh, ...formData } : wh
-        )
-      );
-    } else {
-      const newWarehouse = {
-        id: Date.now(),
-        ...formData,
-        createdAt: new Date().toISOString(),
-      };
-      setWarehouses((prev) => [...prev, newWarehouse]);
+
+    try {
+      if (currentWarehouse) {
+        await dispatch(updateWarehouse({ id: currentWarehouse.warehouse_id, data: formData })).unwrap();
+      } else {
+        await dispatch(addWarehouse(formData)).unwrap();
+      }
+      handleCloseModal();
+    } catch (err) {
+      console.error("Submit Error:", err);
     }
-    handleCloseModal();
   };
 
-  // --- Render ---
+  const filteredWarehouses = warehouses.filter(w => 
+    w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    w.location.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="p-4 sm:p-8 font-inter">
-      <div className="mx-auto">
+    <div className="p-6 max-w-7xl mx-auto font-sans min-h-[calc(100vh-80px)]">
+      
         {/* --- Header --- */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-slate-900">Warehouses</h1>
-          <button
-            onClick={handleAddNewClick}
-            className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-indigo-700 transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-          >
-            <FiPlus className="w-5 h-5" />
-            Add New
-          </button>
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
+                <span className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                    <FiHome size={24} />
+                </span>
+                Warehouses
+            </h1>
+            <p className="mt-1 text-gray-500 text-sm ml-14">Manage physical storage locations.</p>
+          </div>
+          
+           <div className="flex items-center gap-4 w-full md:w-auto">
+             <div className="relative flex-1 md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <FiSearch />
+                </div>
+                <input
+                    type="text"
+                    placeholder="Search warehouses..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none text-sm shadow-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+            </div>
+            
+             {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <button
+                onClick={handleAddNewClick}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-indigo-600/20 transition-all transform hover:scale-[1.02] whitespace-nowrap"
+                >
+                <FiPlus size={20} />
+                <span>New Warehouse</span>
+                </button>
+            )}
+          </div>
         </div>
 
-        {/* --- Warehouse List / Table --- */}
-        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-          <div className="hidden md:grid md:grid-cols-4 gap-4 text-sm font-medium uppercase tracking-wider text-slate-600 bg-slate-100 p-4 border-b border-slate-200">
-            <div className="col-span-1">Warehouse Name</div>
-            <div className="col-span-1">Location</div>
-            <div className="col-span-1">Date Added</div>
-            <div className="col-span-1 text-right">Actions</div>
+        {/* --- Error Display --- */}
+        {error && (
+          <div className="bg-red-50 border border-red-100 text-red-700 px-6 py-4 rounded-xl mb-6 flex items-center gap-3">
+             <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            {error}
           </div>
+        )}
 
-          <div className="divide-y divide-slate-200">
-            {warehouses.length > 0 ? (
-              warehouses.map((warehouse) => (
+        {/* --- Warehouse Grid --- */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {status === 'loading' ? (
+                <div className="col-span-full flex justify-center py-20">
+                    <LoadingSpinner message="Loading Warehouses..." />
+                </div>
+            ) : filteredWarehouses.length > 0 ? (
+              filteredWarehouses.map((warehouse) => (
                 <div
-                  key={warehouse.id}
-                  className="grid md:grid-cols-4 gap-4 p-4 items-center hover:bg-slate-50"
+                  key={warehouse.warehouse_id}
+                  className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-100 transition-all duration-200 relative overflow-hidden flex flex-col justify-between h-48"
                 >
-                  <div className="col-span-1 font-semibold text-slate-800 text-lg">
-                    {warehouse.name}
+                   <div className="absolute top-4 right-4 transition-opacity opacity-0 group-hover:opacity-100 flex gap-2">
+                       {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                           <>
+                            <button
+                                onClick={() => handleEditClick(warehouse)}
+                                className="p-2 bg-gray-50 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-gray-100"
+                                title="Edit"
+                            >
+                                <FiEdit2 size={16} />
+                            </button>
+                             {hasRole([ROLES.ADMIN]) && (
+                                <button
+                                    onClick={() => handleDeleteClick(warehouse.warehouse_id)}
+                                    className="p-2 bg-gray-50 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-100"
+                                    title="Delete"
+                                >
+                                    <FiTrash2 size={16} />
+                                </button>
+                             )}
+                           </>
+                       )}
                   </div>
-                  <div className="col-span-1 text-slate-600 text-sm">
-                    {warehouse.location}
+                  
+                  <div>
+                    <div className="inline-flex p-3 bg-indigo-50 text-indigo-600 rounded-xl mb-4">
+                         <FiHome size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">{warehouse.name}</h3>
                   </div>
-                  <div className="col-span-1 text-slate-600 text-sm">
-                    {new Date(warehouse.createdAt).toLocaleString()}
-                  </div>
-                  <div className="col-span-1 flex justify-end gap-3 mt-2 md:mt-0">
-                    <button
-                      onClick={() => handleEditClick(warehouse)}
-                      className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-full transition duration-200"
-                      title="Edit"
-                    >
-                      <FiEdit className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClick(warehouse.id)}
-                      className="p-2 text-red-600 hover:bg-red-100 rounded-full transition duration-200"
-                      title="Delete"
-                    >
-                      <FiTrash2 className="w-5 h-5" />
-                    </button>
+
+                  <div className="flex items-center gap-2 text-gray-500 text-sm mt-4">
+                      <FiMapPin className="shrink-0" />
+                      <span className="truncate">{warehouse.location}</span>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center p-12 text-slate-500">
-                No warehouses found. Click "Add New" to get started!
-              </div>
+                 <div className="col-span-full py-20 text-center bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+                    <FiHome size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p className="text-gray-500 font-medium">No warehouses found.</p>
+                </div>
             )}
-          </div>
         </div>
-      </div>
 
+      {/* --- Add/Edit Modal --- */}
       <WareHouseModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}

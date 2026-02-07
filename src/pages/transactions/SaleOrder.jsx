@@ -1,512 +1,442 @@
 import React, { useState, useEffect } from "react";
-import { FiFileText, FiX, FiAlertCircle, FiCheckCircle } from "react-icons/fi";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  FiSearch,
+  FiShoppingBag,
+  FiTrash2,
+  FiPlus,
+  FiMinus,
+  FiUser,
+  FiMapPin,
+  FiCreditCard,
+  FiCheckCircle,
+  FiX,
+  FiPackage,
+  FiGrid,
+  FiList
+} from "react-icons/fi";
+import { useDispatch, useSelector } from "react-redux";
+import { createSale, clearSaleError, selectSaleError, selectSaleStatus } from "../../redux/slices/saleSlice";
+import { fetchCustomers, selectAllCustomers, selectCustomerStatus } from "../../redux/slices/customerSlice";
+import { fetchWarehouses, selectAllWarehouses, selectWarehouseStatus } from "../../redux/slices/warehouseSlice";
+import { fetchProducts, selectAllProducts, selectProductStatus } from "../../redux/slices/productSlice";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
 
-// Notification Component
+// --- Components ---
+
 const Notification = ({ notification, onClear }) => {
   if (!notification) return null;
-
   const { type, message } = notification;
   const isSuccess = type === "success";
-
-  const bgColor = isSuccess ? "bg-green-600" : "bg-red-600";
-  const Icon = isSuccess ? FiCheckCircle : FiAlertCircle;
+  const bgColor = isSuccess ? "bg-emerald-500" : "bg-red-500";
+  const Icon = isSuccess ? FiCheckCircle : FiX;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -50, x: "-50%" }}
-      animate={{ opacity: 1, y: 0, x: "-50%" }}
-      exit={{ opacity: 0, y: -50 }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className={`fixed top-5 left-1/2 z-50 flex items-center gap-3 p-4 rounded-lg shadow-xl text-white ${bgColor}`}
+      initial={{ opacity: 0, y: -20, x: "-50%" }}
+      animate={{ opacity: 1, y: 20, x: "-50%" }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`fixed top-0 left-1/2 z-[60] flex items-center gap-3 px-6 py-3 rounded-full shadow-2xl text-white ${bgColor} backdrop-blur-md bg-opacity-95`}
     >
-      <Icon className="text-2xl" />
-      <span className="font-medium">{message}</span>
-      <button onClick={onClear} className="ml-2">
-        <FiX className="text-xl" />
+      <Icon className="text-xl" />
+      <span className="font-medium text-sm">{message}</span>
+      <button onClick={onClear} className="ml-2 hover:bg-white/20 rounded-full p-1 transition-colors">
+        <FiX />
       </button>
     </motion.div>
   );
 };
 
-// Modal Component
-const Modal = ({ isOpen, onClose, children, title }) => {
-  if (!isOpen) return null;
+// --- Main POS Page ---
 
-  return (
-    <div className="fixed inset-0 bg-gray-900/75 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col"
-      >
-        {/* Modal Header */}
-        <div className="flex justify-between items-center p-5 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            {title}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <FiX className="text-2xl" />
-          </button>
-        </div>
+export default function SaleOrderPOS() {
+  const dispatch = useDispatch();
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto">{children}</div>
-      </motion.div>
-    </div>
-  );
-};
+  // Redux Data
+  const customers = useSelector(selectAllCustomers);
+  const warehouses = useSelector(selectAllWarehouses);
+  const products = useSelector(selectAllProducts);
+  const error = useSelector(selectSaleError);
+  const productStatus = useSelector(selectProductStatus);
+  const customerStatus = useSelector(selectCustomerStatus);
+  const warehouseStatus = useSelector(selectWarehouseStatus);
+  const saleStatus = useSelector(selectSaleStatus);
 
-// Main SaleOrders Component
-export default function SaleOrders() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [orderItems, setOrderItems] = useState([]);
-
-  // Mock data - in a real app, fetch this from an API
-  const [customers, setCustomers] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
-
-  // State for new order form
-  const [customer, setCustomer] = useState("");
-  const [warehouse, setWarehouse] = useState("");
+  // Constants
+  const DEFAULT_WAREHOUSE_ID = 1; // Assuming 1 is the default 'Main Warehouse'
+  // Local State
+  const [cart, setCart] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list' for products
+  const [customerId, setCustomerId] = useState("");
+  const [warehouseId, setWarehouseId] = useState(DEFAULT_WAREHOUSE_ID);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [notification, setNotification] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // State for notifications
-  const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '...' }
+  // --- Effects ---
+  useEffect(() => {
+    dispatch(fetchCustomers());
+    dispatch(fetchWarehouses());
+    dispatch(fetchProducts());
+  }, [dispatch]);
 
   useEffect(() => {
-    // Simulate fetching data
-    setCustomers([
-      { id: 1, name: "John Doe" },
-      { id: 2, name: "Jane Smith" },
-      { id: 3, name: "Walk-in Customer" },
-    ]);
-    setWarehouses([
-      { id: 1, name: "Main Warehouse" },
-      { id: 2, name: "Secondary Warehouse" },
-    ]);
-    setProducts([
-      { id: 1, name: "Laptop Pro", price: 1200 },
-      { id: 2, name: "Smartphone X", price: 800 },
-      { id: 3, name: "Wireless Mouse", price: 50 },
-    ]);
-  }, []);
+    if (error) {
+      setNotification({ type: 'error', message: error });
+      dispatch(clearSaleError());
+    }
+  }, [error, dispatch]);
 
-  // Effect to clear notification
-  useEffect(() => {
+  useEffect(() => { // Auto-clear notification
     if (notification) {
-      const timer = setTimeout(() => setNotification(null), 3000);
-      return () => clearTimeout(timer);
+       const timer = setTimeout(() => setNotification(null), 3000);
+       return () => clearTimeout(timer);
     }
   }, [notification]);
 
-  const [orders, setOrders] = useState([
-    {
-      key: 1,
-      invoice_no: "INV-0001",
-      customer: "John Doe",
-      warehouse: "Main Warehouse",
-      total: 320.0,
-      status: "Draft",
-      date: "2025-11-08",
-    },
-  ]);
+  // --- Logic ---
 
-  // Calculate total
-  const calculateTotal = () =>
-    orderItems.reduce((sum, item) => sum + item.subtotal, 0);
-
-  // Add product row
-  const addItem = () => {
-    setOrderItems([
-      ...orderItems,
-      {
-        key: Date.now(),
-        product_id: "",
+  const addToCart = (product) => {
+    const existingItem = cart.find(item => item.product_id === product.product_id);
+    if (existingItem) {
+      setCart(cart.map(item => 
+        item.product_id === product.product_id 
+          ? { ...item, quantity: item.quantity + 1, subtotal: (item.quantity + 1) * item.price }
+          : item
+      ));
+    } else {
+      setCart([...cart, {
+        product_id: product.product_id,
+        name: product.name,
+        price: parseFloat(product.sell_price),
         quantity: 1,
-        price: 0,
-        subtotal: 0,
-      },
-    ]);
-  };
-
-  // Remove product row
-  const removeItem = (key) => {
-    setOrderItems(orderItems.filter((item) => item.key !== key));
-  };
-
-  // Update quantity or price
-  const updateItem = (index, field, value) => {
-    const key = orderItems[index].key;
-    const updated = orderItems.map((item) =>
-      item.key === key
-        ? {
-            ...item,
-            [field]: value,
-            subtotal:
-              field === "quantity"
-                ? value * item.price
-                : field === "price"
-                ? item.quantity * value
-                : item.subtotal,
-          }
-        : item
-    );
-    if (field === "product_id") {
-      const product = products.find((p) => p.id === parseInt(value));
-      updated[index].price = product ? product.price : 0;
-      updated[index].subtotal =
-        updated[index].quantity * (product ? product.price : 0);
+        subtotal: parseFloat(product.sell_price),
+        image: product.image
+      }]);
     }
-    setOrderItems(updated);
   };
 
-  // Handle submit
-  const handleCreateOrder = () => {
-    // Validation
-    if (!customer || !warehouse) {
-      setNotification({
-        type: "error",
-        message: "Customer and Warehouse are required.",
-      });
+  const updateQuantity = (productId, delta) => {
+    setCart(cart.map(item => {
+      if (item.product_id === productId) {
+        const newQty = Math.max(1, item.quantity + delta);
+        return { ...item, quantity: newQty, subtotal: newQty * item.price };
+      }
+      return item;
+    }));
+  };
+
+  const removeFromCart = (productId) => {
+    setCart(cart.filter(item => item.product_id !== productId));
+  };
+
+  const calculateTotal = () => cart.reduce((sum, item) => sum + item.subtotal, 0);
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) {
+      setNotification({ type: 'error', message: 'Cart is empty!' });
       return;
     }
-
-    if (orderItems.length === 0) {
-      setNotification({
-        type: "error",
-        message: "Please add at least one product.",
-      });
-      return;
+    if (!warehouseId) {
+        setNotification({ type: 'error', message: 'Please select a warehouse.' });
+        return;
     }
 
-    const total = calculateTotal();
-    const newOrder = {
-      key: Date.now(),
-      invoice_no: "INV-" + Math.floor(1000 + Math.random() * 9000),
-      customer:
-        customers.find((c) => c.id === parseInt(customer))?.name || "N/A",
-      warehouse:
-        warehouses.find((w) => w.id === parseInt(warehouse))?.name || "N/A",
-      total,
-      status: "Draft",
-      date: new Date().toISOString().split("T")[0],
+    setIsProcessing(true);
+    const saleData = {
+      customer_id: customerId ? parseInt(customerId) : null, // Optional customer
+      warehouse_id: parseInt(warehouseId),
+      total_amount: calculateTotal(),
+      payment_method: paymentMethod,
+      sale_date: new Date().toISOString().split("T")[0],
+      items: cart.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        sell_price: item.price
+      }))
     };
 
-    setOrders([...orders, newOrder]);
-    setIsModalOpen(false);
-
-    // Reset form
-    setCustomer("");
-    setWarehouse("");
-    setPaymentMethod("Cash");
-    setOrderItems([]);
-
-    setNotification({
-      type: "success",
-      message: "Sale order created successfully!",
-    });
+    try {
+      await dispatch(createSale(saleData)).unwrap();
+      setCart([]);
+      setCustomerId("");
+      setPaymentMethod("Cash");
+      setNotification({ type: 'success', message: 'Sale completed successfully!' });
+    } catch {
+      // Error handled by redux effect
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  // Close modal handler
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-  };
+  // derived state
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.code?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  
+  const isLoading = productStatus === 'loading' || customerStatus === 'loading' || warehouseStatus === 'loading' || saleStatus === 'loading';
 
   return (
-    <>
-      <Notification
-        notification={notification}
-        onClear={() => setNotification(null)}
-      />
-      <motion.div
-        className="p-4 sm:p-6 font-inter"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-            <FiFileText className="text-blue-600" /> Sale Orders
-          </h1>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-          >
-            + New Sale Order
-          </button>
-        </div>
+    <div className="flex flex-col lg:flex-row h-screen bg-slate-100 overflow-hidden font-sans text-slate-800">
+      <AnimatePresence>
+        <Notification notification={notification} onClear={() => setNotification(null)} />
+      </AnimatePresence>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <input
-            type="text"
-            placeholder="Search invoice, customer, date..."
-            className="flex-grow w-full sm:w-1/3 bg-white border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select className="w-full sm:w-1/4 bg-white border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="all">All</option>
-            <option value="draft">Draft</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-
-        {/* Orders Table */}
-        <div className="bg-white shadow-lg rounded-xl overflow-x-auto border border-gray-200">
-          <table className="w-full min-w-max">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                {[
-                  "Invoice No",
-                  "Customer",
-                  "Warehouse",
-                  "Total ($)",
-                  "Status",
-                  "Date",
-                ].map((title) => (
-                  <th
-                    key={title}
-                    className="p-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                  >
-                    {title}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {orders.map((order) => (
-                <tr
-                  key={order.key}
-                  className="hover:bg-gray-50 transition-colors"
+      {/* --- LEFT SIDE: PRODUCT CATALOG --- */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-slate-200 bg-slate-50">
+        
+        {/* Header Bar */}
+        <div className="bg-white p-4 shadow-sm z-10 sticky top-0">
+          <div className="flex justify-between items-center mb-4">
+             <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+               <span className="bg-indigo-600 text-white p-2 rounded-lg"><FiShoppingBag /></span>
+               POS Terminal
+             </h1>
+             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+                <button 
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                  <td className="p-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                    {order.invoice_no}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-700">
-                    {order.customer}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-700">
-                    {order.warehouse}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                    ${order.total.toFixed(2)}
-                  </td>
-                  <td className="p-4 whitespace-nowrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      {order.status}
-                    </span>
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-600">
-                    {order.date}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-
-      {/* Create Order Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        title={
-          <>
-            <FiFileText /> Create Sale Order
-          </>
-        }
-      >
-        {/* Form Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Customer
-            </label>
-            <select
-              value={customer}
-              onChange={(e) => setCustomer(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="" disabled>
-                Select a customer
-              </option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+                  <FiGrid size={20} />
+                </button>
+                <button 
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <FiList size={20} />
+                </button>
+             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Warehouse
-            </label>
-            <select
-              value={warehouse}
-              onChange={(e) => setWarehouse(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="" disabled>
-                Select a warehouse
-              </option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Payment Method
-            </label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="Cash">Cash</option>
-              <option value="Card">Card</option>
-              <option value="Transfer">Transfer</option>
-              <option value="Credit">Credit</option>
-            </select>
+          
+          {/* Search */}
+          <div className="relative">
+            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg" />
+            <input 
+              type="text" 
+              placeholder="Search products by name or code..."
+              className="w-full pl-12 pr-4 py-3 bg-slate-100 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-700 placeholder:text-slate-400"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              autoFocus
+            />
           </div>
         </div>
 
-        {/* Product Items */}
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="font-semibold text-lg text-gray-700">Products</h3>
-          <button
-            onClick={addItem}
-            className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-200 transition-colors"
-          >
-            + Add Product
-          </button>
+        {/* Product Grid/List */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+           {isLoading && products.length === 0 ? (
+             <div className="h-full flex items-center justify-center">
+                <LoadingSpinner message="Loading Products..." />
+             </div>
+           ) : filteredProducts.length === 0 ? (
+             <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                <FiPackage size={64} strokeWidth={1} />
+                <p className="mt-4 text-lg font-medium">No products found</p>
+             </div>
+           ) : viewMode === 'grid' ? (
+             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredProducts.map(product => (
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    key={product.product_id}
+                    onClick={() => addToCart(product)}
+                    className="group bg-white rounded-2xl p-4 shadow-sm hover:shadow-md border border-slate-100 cursor-pointer transition-all hover:-translate-y-1 active:scale-[0.98]"
+                  >
+                     <div className="aspect-square bg-slate-50 rounded-xl mb-3 flex items-center justify-center text-slate-300 relative overflow-hidden group-hover:bg-indigo-50 transition-colors">
+                        {product.image ? (
+                          <img src={product.image} alt={product.name} className="object-cover w-full h-full" />
+                        ) : (
+                          <FiPackage size={40} className="group-hover:text-indigo-400 transition-colors" />
+                        )}
+                        <div className="absolute top-2 right-2 bg-slate-900/10 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-slate-700">
+                           {product.quantity > 0 ? `${product.quantity} in stock` : 'Out of Stock'}
+                        </div>
+                     </div>
+                     <h3 className="font-semibold text-slate-800 line-clamp-2 min-h-[3rem] mb-1 leading-snug">
+                       {product.name}
+                     </h3>
+                     <div className="flex justify-between items-center mt-2">
+                        <span className="text-indigo-600 font-bold text-lg">${parseFloat(product.sell_price).toFixed(2)}</span>
+                        <div className="bg-indigo-100 text-indigo-600 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-sm">
+                           <FiPlus />
+                        </div>
+                     </div>
+                  </motion.div>
+                ))}
+             </div>
+           ) : (
+             <div className="space-y-2">
+               {filteredProducts.map(product => (
+                  <motion.div 
+                    layout
+                    key={product.product_id}
+                    onClick={() => addToCart(product)}
+                    className="flex items-center gap-4 bg-white p-3 rounded-xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-all active:scale-[0.99] group"
+                  >
+                     <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400">
+                        <FiPackage size={24} />
+                     </div>
+                     <div className="flex-1">
+                        <h3 className="font-semibold text-slate-800">{product.name}</h3>
+                        <p className="text-xs text-slate-500">Code: {product.code || 'N/A'} • Stock: {product.quantity}</p>
+                     </div>
+                     <div className="text-right">
+                       <p className="text-indigo-600 font-bold">${parseFloat(product.sell_price).toFixed(2)}</p>
+                     </div>
+                     <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <FiPlus />
+                     </div>
+                  </motion.div>
+               ))}
+             </div>
+           )}
         </div>
+      </div>
 
-        {/* Items Table */}
-        <div className="rounded-lg border border-gray-200 overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                  Product
-                </th>
-                <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                  Qty
-                </th>
-                <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                  Unit Price ($)
-                </th>
-                <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                  Subtotal ($)
-                </th>
-                <th className="p-3 w-auto text-left text-xs font-semibold text-gray-500 uppercase">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {orderItems.map((item, index) => (
-                <tr key={item.key}>
-                  <td className="p-2">
-                    <select
-                      value={item.product_id}
-                      onChange={(e) =>
-                        updateItem(index, "product_id", e.target.value)
-                      }
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    >
-                      <option value="" disabled>
-                        Select a product
-                      </option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="number"
-                      min={1}
-                      value={item.quantity}
-                      onChange={(e) =>
-                        updateItem(
-                          index,
-                          "quantity",
-                          parseInt(e.target.value) || 0
-                        )
-                      }
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={item.price}
-                      onChange={(e) =>
-                        updateItem(
-                          index,
-                          "price",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </td>
-                  <td className="p-2 text-sm text-gray-800 font-medium">
-                    {item.subtotal.toFixed(2)}
-                  </td>
-                  <td className="p-2">
-                    <button
-                      onClick={() => removeItem(item.key)}
-                      className="bg-red-100 text-red-600 px-2.5 py-1.5 rounded-md text-xs font-semibold hover:bg-red-200"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* --- RIGHT SIDE: CART --- */}
+      <div className="w-full lg:w-[450px] bg-white h-full flex flex-col shadow-2xl z-20">
+         {/* Cart Header */}
+         <div className="p-6 border-b border-slate-100 bg-white">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Current Order</h2>
+            
+            {/* Customer & Warehouse Select */}
+            <div className="space-y-3">
+               <div className="relative">
+                  <FiUser className="absolute left-3 top-3 text-slate-400" />
+                  <select 
+                    className="w-full pl-9 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    value={customerId}
+                    onChange={e => setCustomerId(e.target.value)}
+                  >
+                     <option value="">Walk-in Customer</option>
+                     {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}
+                  </select>
+               </div>
+               <div className="relative">
+                  <FiMapPin className="absolute left-3 top-3 text-slate-400" />
+                  <select 
+                    className="w-full pl-9 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    value={warehouseId}
+                    onChange={e => setWarehouseId(e.target.value)}
+                  >
+                     <option value="" disabled>Select Warehouse</option>
+                     {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
+                  </select>
+               </div>
+            </div>
+         </div>
 
-        {/* Total */}
-        <div className="text-right mt-5">
-          <span className="font-bold text-2xl text-gray-800">
-            Total: ${calculateTotal().toFixed(2)}
-          </span>
-        </div>
+         {/* Cart Items */}
+         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50/50">
+            {cart.length === 0 ? (
+               <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
+                  <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center">
+                     <FiShoppingBag size={32} />
+                  </div>
+                  <p className="text-center">Your cart is empty.<br/>Select products to start selling.</p>
+               </div>
+            ) : (
+               <div className="space-y-3">
+                  <AnimatePresence>
+                  {cart.map(item => (
+                     <motion.div 
+                        layout
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        key={item.product_id}
+                        className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3 relative group"
+                     >
+                        <button 
+                           onClick={() => removeFromCart(item.product_id)}
+                           className="absolute -right-2 -top-2 bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-10"
+                        >
+                           <FiX size={12} />
+                        </button>
 
-        {/* Modal Footer */}
-        <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-200">
-          <button
-            onClick={handleCloseModal}
-            className="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreateOrder}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition-colors"
-          >
-            Create
-          </button>
-        </div>
-      </Modal>
-    </>
+                        <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400 shrink-0">
+                           <FiPackage />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                           <h4 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h4>
+                           <p className="text-xs text-slate-500">${item.price.toFixed(2)} / unit</p>
+                        </div>
+
+                        {/* Qty Controls */}
+                        <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-1">
+                           <button 
+                              onClick={() => updateQuantity(item.product_id, -1)}
+                              className="w-7 h-7 flex items-center justify-center bg-white rounded-md shadow-sm text-slate-600 hover:text-indigo-600 hover:shadow-md transition-all active:scale-90"
+                           >
+                              <FiMinus size={14} />
+                           </button>
+                           <span className="text-sm font-bold text-slate-800 w-4 text-center">{item.quantity}</span>
+                           <button 
+                              onClick={() => updateQuantity(item.product_id, 1)}
+                              className="w-7 h-7 flex items-center justify-center bg-white rounded-md shadow-sm text-slate-600 hover:text-indigo-600 hover:shadow-md transition-all active:scale-90"
+                           >
+                              <FiPlus size={14} />
+                           </button>
+                        </div>
+
+                        <div className="font-bold text-slate-800 text-right w-16">
+                           ${item.subtotal.toFixed(2)}
+                        </div>
+                     </motion.div>
+                  ))}
+                  </AnimatePresence>
+               </div>
+            )}
+         </div>
+
+         {/* Cart Footer */}
+         <div className="p-6 bg-white border-t border-slate-100 shadow-[0_-5px_20px_-5px_rgba(0,0,0,0.05)] z-20">
+            {/* Payment Method */}
+            <div className="mb-4">
+               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Payment Method</label>
+               <div className="grid grid-cols-3 gap-2">
+                  {['Cash', 'Card', 'Transfer'].map(method => (
+                     <button
+                        key={method}
+                        onClick={() => setPaymentMethod(method)}
+                        className={`py-2 px-1 rounded-lg text-sm font-medium transition-all ${
+                           paymentMethod === method 
+                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+                              : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                     >
+                        {method}
+                     </button>
+                  ))}
+               </div>
+            </div>
+
+            <div className="flex justify-between items-center mb-6">
+               <span className="text-slate-500 font-medium">Total Amount</span>
+               <span className="text-3xl font-bold text-indigo-700">${calculateTotal().toFixed(2)}</span>
+            </div>
+
+            <button 
+               onClick={handleCheckout}
+               disabled={isProcessing || cart.length === 0}
+               className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-lg rounded-2xl shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+               {isProcessing ? (
+                  <>Processing...</>
+               ) : (
+                  <>
+                    <FiCheckCircle size={24} /> 
+                    Confirm Payment
+                  </>
+               )}
+            </button>
+         </div>
+      </div>
+    </div>
   );
 }

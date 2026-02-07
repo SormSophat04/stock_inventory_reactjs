@@ -1,784 +1,638 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
-
-// --- SVG Icon Components ---
-import {
-  FiRefreshCw,
-  FiX,
-  FiAlertCircle,
-  FiCheckCircle,
-  FiEdit,
+import { motion, AnimatePresence } from "framer-motion";
+import { useDispatch, useSelector } from "react-redux";
+import { 
+  FiRefreshCw, 
+  FiPlus, 
+  FiX, 
+  FiAlertCircle, 
+  FiCheckCircle, 
+  FiEdit3, 
   FiTrash2,
+  FiSearch,
+  FiFilter,
+  FiRotateCcw,
+  FiLoader,
+  FiFileText,
+  FiMapPin,
+  FiUser
 } from "react-icons/fi";
 
-// Notification Component
+// Redux
+import { 
+  fetchReturns, 
+  createReturn, 
+  deleteReturn,
+  updateReturn,
+  selectAllReturns,
+  selectReturnStatus,
+  selectReturnError,
+  clearReturnError
+} from "../../redux/slices/returnSlice";
+import { fetchCustomers, selectAllCustomers, selectCustomerStatus } from "../../redux/slices/customerSlice";
+import { fetchWarehouses, selectAllWarehouses, selectWarehouseStatus } from "../../redux/slices/warehouseSlice";
+import { fetchProducts, selectAllProducts, selectProductStatus } from "../../redux/slices/productSlice";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
+
+// --- Components ---
+
 const Notification = ({ notification, onClear }) => {
   if (!notification) return null;
-
   const { type, message } = notification;
   const isSuccess = type === "success";
-
-  const bgColor = isSuccess ? "bg-green-600" : "bg-red-600";
+  const bgColor = isSuccess ? "bg-emerald-500" : "bg-red-500";
   const Icon = isSuccess ? FiCheckCircle : FiAlertCircle;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -50, x: "-50%" }}
-      animate={{ opacity: 1, y: 0, x: "-50%" }}
-      exit={{ opacity: 0, y: -50 }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className={`fixed top-5 left-1/2 z-50 flex items-center gap-3 p-4 rounded-lg shadow-xl text-white ${bgColor}`}
+      initial={{ opacity: 0, y: -20, x: "-50%" }}
+      animate={{ opacity: 1, y: 20, x: "-50%" }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`fixed top-0 left-1/2 z-[60] flex items-center gap-3 px-6 py-3 rounded-full shadow-2xl text-white ${bgColor} backdrop-blur-md bg-opacity-90`}
     >
-      <Icon className="text-2xl" />
-      <span className="font-medium">{message}</span>
-      <button onClick={onClear} className="ml-2">
-        <FiX className="text-xl" />
+      <Icon className="text-xl" />
+      <span className="font-medium text-sm">{message}</span>
+      <button onClick={onClear} className="ml-2 hover:bg-white/20 rounded-full p-1 transition-colors">
+        <FiX />
       </button>
     </motion.div>
   );
 };
 
-// Modal Component
 const Modal = ({ isOpen, onClose, children, title }) => {
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-gray-900/75 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col"
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
       >
-        {/* Modal Header */}
-        <div className="flex justify-between items-center p-5 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <FiX className="text-2xl" />
+            <FiX size={20} />
           </button>
         </div>
-
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </motion.div>
     </div>
   );
 };
 
-// Main ReturnOrders Component
-export default function ReturnOrders() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [currentReturn, setCurrentReturn] = useState(null);
-  const [returnItems, setReturnItems] = useState([]);
+const StatusBadge = ({ status }) => {
+  const styles = {
+    Confirmed: "bg-emerald-100 text-emerald-700 ring-emerald-600/20",
+    Pending: "bg-amber-100 text-amber-700 ring-amber-600/20",
+    Draft: "bg-slate-100 text-slate-700 ring-slate-600/20",
+    Cancelled: "bg-red-100 text-red-700 ring-red-600/20",
+  };
+  
+  const defaultStyle = "bg-slate-100 text-slate-700 ring-slate-600/20";
+  const activeStyle = styles[status] || defaultStyle;
 
-  // State for filtering and searching
+  return (
+    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${activeStyle}`}>
+      {status}
+    </span>
+  );
+};
+
+// --- Main Page ---
+
+export default function ReturnOrders() {
+  const dispatch = useDispatch();
+  
+  // Redux
+  const returns = useSelector(selectAllReturns);
+  const status = useSelector(selectReturnStatus);
+  const error = useSelector(selectReturnError);
+  const customers = useSelector(selectAllCustomers);
+  const warehouses = useSelector(selectAllWarehouses);
+  const products = useSelector(selectAllProducts);
+
+  const customerStatus = useSelector(selectCustomerStatus);
+  const warehouseStatus = useSelector(selectWarehouseStatus);
+  const productStatus = useSelector(selectProductStatus);
+
+  // State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingReturn, setEditingReturn] = useState(null);
+  const [notification, setNotification] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // Mock data for dropdowns
-  const [customers, setCustomers] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
-
-  // Form state
+  // Form State
   const [saleRef, setSaleRef] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [reason, setReason] = useState("");
   const [refundType, setRefundType] = useState("Cash");
+  const [returnItems, setReturnItems] = useState([]);
+  const [returnStatusField, setReturnStatusField] = useState("Draft");
 
-  const [notification, setNotification] = useState(null);
+  // Effects
+  useEffect(() => {
+    dispatch(fetchReturns());
+    dispatch(fetchCustomers());
+    dispatch(fetchWarehouses());
+    dispatch(fetchProducts());
+  }, [dispatch]);
 
   useEffect(() => {
-    // Simulate fetching data
-    setCustomers([
-      { id: 1, name: "John Doe" },
-      { id: 2, name: "Jane Smith" },
-    ]);
-    setWarehouses([
-      { id: 1, name: "Main Warehouse" },
-      { id: 2, name: "Secondary Warehouse" },
-    ]);
-    setProducts([
-      { id: 1, name: "Laptop Pro", price: 1200 },
-      { id: 2, name: "Smartphone X", price: 800 },
-      { id: 3, name: "Wireless Mouse", price: 50 },
-    ]);
-  }, []);
+    if (error) {
+       setNotification({ type: 'error', message: error });
+       dispatch(clearReturnError());
+    }
+  }, [error, dispatch]);
 
-  const [returns, setReturns] = useState([
-    {
-      key: 1,
-      return_no: "RET-0001",
-      sale_ref: "INV-0012",
-      customer: "John Doe",
-      warehouse: "Main Warehouse",
-      total_refund: 50.0,
-      status: "Confirmed",
-      date: "2025-11-08",
-    },
-    {
-      key: 2,
-      return_no: "RET-0002",
-      sale_ref: "INV-0014",
-      customer: "Jane Smith",
-      warehouse: "Main Warehouse",
-      total_refund: 120.0,
-      status: "Draft",
-      date: "2025-11-09",
-    },
-  ]);
-
-  // Effect to clear notification
   useEffect(() => {
     if (notification) {
-      const timer = setTimeout(() => setNotification(null), 3000);
+      const timer = setTimeout(() => setNotification(null), 4000);
       return () => clearTimeout(timer);
     }
   }, [notification]);
 
-  // Memoized filtered returns
-  const filteredReturns = useMemo(() => {
-    return returns.filter((ret) => {
-      const searchTermLower = searchTerm.toLowerCase();
-      const matchesSearch =
-        ret.return_no.toLowerCase().includes(searchTermLower) ||
-        ret.customer.toLowerCase().includes(searchTermLower) ||
-        ret.date.toLowerCase().includes(searchTermLower);
-
-      const matchesStatus =
-        statusFilter === "all" || ret.status.toLowerCase() === statusFilter;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [returns, searchTerm, statusFilter]);
-
-  const addItem = () => {
-    setReturnItems([
-      ...returnItems,
-      { key: Date.now(), product_id: "", qty: 1, price: 0, subtotal: 0 },
-    ]);
-  };
-
-  const removeItem = (key) => {
-    setReturnItems(returnItems.filter((i) => i.key !== key));
-  };
-
-  const updateItem = (index, field, value) => {
-    const key = returnItems[index].key;
-    const updated = returnItems.map((item) =>
-      item.key === key
-        ? {
-            ...item,
-            [field]: value,
-            subtotal:
-              field === "qty"
-                ? value * item.price
-                : field === "price"
-                ? item.qty * value
-                : item.subtotal,
-          }
-        : item
-    );
-    if (field === "product_id") {
-      const product = products.find((p) => p.id === parseInt(value));
-      updated[index].price = product ? product.price : 0;
-      updated[index].subtotal =
-        updated[index].qty * (product ? product.price : 0);
-    }
-    setReturnItems(updated);
-  };
-
-  const calculateTotal = () =>
-    returnItems.reduce((sum, i) => sum + i.subtotal, 0);
-
+  // Logic
   const resetForm = () => {
     setSaleRef("");
     setCustomerId("");
     setWarehouseId("");
     setReason("");
     setRefundType("Cash");
+    setReturnStatusField("Draft");
     setReturnItems([]);
+    setEditingReturn(null);
   };
 
-  const handleCreateReturn = async () => {
-    // Validation
+  const addItem = () => {
+    setReturnItems([...returnItems, { key: Date.now(), product_id: "", qty: 1, price: 0, subtotal: 0 }]);
+  };
+
+  const removeItem = (key) => {
+    setReturnItems(returnItems.filter(i => i.key !== key));
+  };
+
+  const updateItem = (index, field, value) => {
+    const newItems = [...returnItems];
+    const item = newItems[index];
+
+    if (field === "product_id") {
+      const product = products.find(p => p.product_id === parseInt(value));
+      item.product_id = value;
+      item.price = product ? (parseFloat(product.sell_price) || 0) : 0;
+    } else {
+      item[field] = value;
+    }
+
+    item.subtotal = item.qty * item.price;
+    setReturnItems(newItems);
+  };
+
+  const calculateTotal = () => returnItems.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const handleOpenModal = (ret = null) => {
+    if (ret) {
+      setEditingReturn(ret);
+      setSaleRef(ret.sale_ref || ret.sale?.invoice_no || "");
+      setCustomerId(ret.customer_id);
+      setWarehouseId(ret.warehouse_id);
+      setReason(ret.reason);
+      setRefundType(ret.refund_type);
+      setReturnStatusField(ret.status);
+      setReturnItems((ret.items || []).map(i => ({
+        key: Math.random(),
+        product_id: i.product_id,
+        qty: i.quantity,
+        price: i.price,
+        subtotal: i.quantity * i.price
+      })));
+    } else {
+      resetForm();
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
     if (!saleRef || !customerId || !warehouseId) {
-      setNotification({
-        type: "error",
-        message: "Sale Reference, Customer, and Warehouse are required.",
-      });
+      setNotification({ type: "error", message: "Please fill all required fields." });
       return;
     }
-
     if (returnItems.length === 0) {
-      setNotification({
-        type: "error",
-        message: "Please add at least one returned item.",
-      });
+      setNotification({ type: "error", message: "Return at least one item." });
       return;
     }
 
-    const customer = customers.find((c) => c.id === parseInt(customerId));
-    const warehouse = warehouses.find((w) => w.id === parseInt(warehouseId));
-
-    const total = calculateTotal();
-    const newReturn = {
-      key: Date.now(),
-      return_no: "RET-" + Math.floor(1000 + Math.random() * 9000),
+    const payload = {
       sale_ref: saleRef,
-      customer: customer ? customer.name : "N/A",
-      warehouse: warehouse ? warehouse.name : "N/A",
-      total_refund: total,
-      status: "Draft",
-      date: new Date().toISOString().split("T")[0],
+      customer_id: parseInt(customerId),
+      warehouse_id: parseInt(warehouseId),
+      return_date: new Date().toISOString().split("T")[0],
+      status: returnStatusField,
+      reason: reason,
+      refund_type: refundType,
+      items: returnItems.map(i => ({
+        product_id: parseInt(i.product_id),
+        quantity: parseInt(i.qty),
+        price: parseFloat(i.price)
+      }))
     };
 
-    setReturns([...returns, newReturn]);
-    setIsModalOpen(false);
-    resetForm();
-    setNotification({
-      type: "success",
-      message: "Return order created successfully!",
-    });
-  };
-
-  const handleEditClick = (returnOrder) => {
-    setCurrentReturn(returnOrder);
-    // Pre-fill form state
-    const customer = customers.find((c) => c.name === returnOrder.customer);
-    const warehouse = warehouses.find((w) => w.name === returnOrder.warehouse);
-
-    setSaleRef(returnOrder.sale_ref);
-    setCustomerId(customer ? customer.id : "");
-    setWarehouseId(warehouse ? warehouse.id : "");
-    // For simplicity, we'll start with an empty item list for editing.
-    // A real-world scenario might fetch and pre-fill these items.
-    setReturnItems([]);
-    setReason(""); // Assuming reason is not stored on the main return object
-    setRefundType("Cash"); // Reset or load from returnOrder if available
-
-    setIsEditModalOpen(true);
-  };
-
-  const handleUpdateReturn = () => {
-    if (!currentReturn) return;
-
-    // Validation
-    if (!saleRef || !customerId || !warehouseId) {
-      setNotification({
-        type: "error",
-        message: "Sale Reference, Customer, and Warehouse are required.",
-      });
-      return;
-    }
-
-    const customer = customers.find((c) => c.id === parseInt(customerId));
-    const warehouse = warehouses.find((w) => w.id === parseInt(warehouseId));
-    const total = calculateTotal();
-
-    const updatedReturns = returns.map((r) =>
-      r.key === currentReturn.key
-        ? {
-            ...r,
-            sale_ref: saleRef,
-            customer: customer ? customer.name : "N/A",
-            warehouse: warehouse ? warehouse.name : "N/A",
-            total_refund: total,
-            // You might want to update other fields like status or date here as well
-          }
-        : r
-    );
-
-    setReturns(updatedReturns);
-    setIsEditModalOpen(false);
-    setCurrentReturn(null);
-    resetForm();
-    setNotification({
-      type: "success",
-      message: "Return order updated successfully!",
-    });
-  };
-
-  const getStatusClass = (status) => {
-    switch (status) {
-      case "Confirmed":
-        return "bg-green-100 text-green-800";
-      case "Draft":
-        return "bg-yellow-100 text-yellow-800";
-      case "Cancelled":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
+    try {
+      if (editingReturn) {
+        // Assuming updateReturn exists in slice
+        await dispatch(updateReturn({ id: editingReturn.return_id, data: payload })).unwrap();
+        setNotification({ type: "success", message: "Return updated successfully." });
+      } else {
+        await dispatch(createReturn(payload)).unwrap();
+        setNotification({ type: "success", message: "Return created successfully." });
+      }
+      setIsModalOpen(false);
+    } catch {
+      setNotification({ type: "error", message: "Failed to create return." });
     }
   };
 
-  const handleDeleteReturn = (key) => {
-    setReturns(returns.filter((r) => r.key !== key));
-    setNotification({
-      type: "success",
-      message: "Return order deleted.",
-    });
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this return?")) return;
+    try {
+      await dispatch(deleteReturn(id)).unwrap();
+      setNotification({ type: "success", message: "Return deleted." });
+    } catch {
+      setNotification({ type: "error", message: "Failed to delete return." });
+    }
   };
+
+  // Filter
+  const filteredReturns = useMemo(() => {
+    return returns.filter(ret => {
+        const matchesSearch = 
+            ret.return_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            ret.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === 'all' || ret.status === statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+  }, [returns, searchTerm, statusFilter]);
+
+  const isLoading = status === 'loading' || customerStatus === 'loading' || warehouseStatus === 'loading' || productStatus === 'loading';
 
   return (
-    <>
-      <Notification
-        notification={notification}
-        onClear={() => setNotification(null)}
-      />
-      <motion.div
-        className="p-4 sm:p-6 font-inter"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-            <FiRefreshCw className="text-blue-600 w-7 h-7" /> Return Orders
+    <div className="p-6 max-w-[1600px] mx-auto font-sans text-slate-800">
+      <AnimatePresence>
+        <Notification notification={notification} onClear={() => setNotification(null)} />
+      </AnimatePresence>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+             <div className="p-3 bg-red-500 rounded-xl text-white shadow-lg shadow-red-200">
+                <FiRotateCcw size={24} />
+             </div>
+             Return Orders
           </h1>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-          >
-            + New Return
-          </button>
+          <p className="mt-2 text-slate-500">Manage customer returns and refunds.</p>
         </div>
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl font-semibold shadow-xl shadow-slate-200 transition-all transform hover:scale-[1.02]"
+        >
+          <FiPlus size={20} />
+          <span>New Return</span>
+        </button>
+      </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <input
-            type="text"
-            placeholder="Search return no, customer, date..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-grow w-full sm:w-1/3 bg-white border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full sm:w-1/4 bg-white border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All</option>
-            <option value="draft">Draft</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+       {/* Stats Cards */}
+       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Total Returns</h3>
+            <p className="text-3xl font-bold text-slate-900">{returns.length}</p>
+         </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Pending Review</h3>
+            <p className="text-3xl font-bold text-amber-500">{returns.filter(r => r.status === 'Draft' || r.status === 'Pending').length}</p>
+         </div>
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Refunded</h3>
+            <p className="text-3xl font-bold text-emerald-500">{returns.filter(r => r.status === 'Confirmed').length}</p>
+         </div>
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Total Refunded</h3>
+            <p className="text-3xl font-bold text-red-500">
+                ${returns.reduce((acc, r) => acc + parseFloat(r.total_refund || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+         </div>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
+        <div className="relative w-full md:w-96">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <FiSearch />
+            </div>
+            <input 
+                type="text" 
+                placeholder="Search Return # or Customer..." 
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+            />
         </div>
+        
+        <div className="flex items-center gap-2 w-full md:w-auto">
+             <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                <FiFilter className="text-slate-400" />
+                <select 
+                    className="bg-transparent outline-none text-sm font-medium text-slate-600"
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                >
+                    <option value="all">All Status</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="Cancelled">Cancelled</option>
+                </select>
+             </div>
+        </div>
+      </div>
 
-        {/* Table */}
-        <div className="bg-white shadow-lg rounded-xl overflow-x-auto border border-gray-200">
-          <table className="w-full min-w-max">
-            <thead className="bg-gray-50 border-b border-gray-200">
+       {/* Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {[
-                  "Return No",
-                  "Sale Ref",
-                  "Customer",
-                  "Warehouse",
-                  "Total Refund ($)",
-                  "Status",
-                  "Date",
-                  "Actions",
-                ].map((title) => (
-                  <th
-                    key={title}
-                    className="p-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                  >
-                    {title}
+                {["Return #", "Sale Ref", "Customer", "Warehouse", "Date", "Status", "Refund ($)", "Action"].map((h) => (
+                  <th key={h} className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredReturns.map((ret) => (
-                <tr
-                  key={ret.key}
-                  className="hover:bg-gray-50 transition-colors"
-                >
-                  <td className="p-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                    {ret.return_no}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-600">
-                    {ret.sale_ref}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-700 font-medium">
-                    {ret.customer}
-                  </td>
-                  <td className="p-4 whitespace-nowrad text-sm text-gray-700">
-                    {ret.warehouse}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                    ${ret.total_refund.toFixed(2)}
-                  </td>
-                  <td className="p-4 whitespace-nowrap">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(
-                        ret.status
-                      )}`}
-                    >
-                      {ret.status}
-                    </span>
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm text-gray-600">
-                    {ret.date}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleEditClick(ret)}
-                        className="text-blue-600 hover:text-blue-800 transition-colors"
-                        title="Edit"
-                      >
-                        <FiEdit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteReturn(ret.key)}
-                        className="text-red-600 hover:text-red-800 transition-colors"
-                        title="Delete"
-                      >
-                        <FiTrash2 size={16} />
-                      </button>
-                    </div>
+            <tbody className="divide-y divide-slate-50">
+              {isLoading && returns.length === 0 ? (
+                <tr>
+                   <td colSpan="8" className="px-6 py-12 text-center text-slate-400">
+                      <LoadingSpinner message="Loading returns..." />
                   </td>
                 </tr>
+              ) : filteredReturns.length === 0 ? (
+                <tr>
+                   <td colSpan="8" className="px-6 py-12 text-center text-slate-400">
+                      No returns found.
+                  </td>
+                </tr>
+              ) : filteredReturns.map((ret) => (
+                  <tr key={ret.return_id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="px-6 py-4 text-sm font-medium text-indigo-600">
+                          {ret.return_no}
+                      </td>
+                       <td className="px-6 py-4 text-sm text-slate-600">
+                           <div className="flex items-center gap-1">
+                               <FiFileText className="text-slate-400" />
+                               {ret.sale_ref || "N/A"}
+                           </div>
+                      </td>
+                       <td className="px-6 py-4 text-sm text-slate-600">
+                           {ret.customer?.name}
+                      </td>
+                       <td className="px-6 py-4 text-sm text-slate-600">
+                           {ret.warehouse?.name}
+                      </td>
+                       <td className="px-6 py-4 text-sm text-slate-500">
+                           {new Date(ret.return_date).toLocaleDateString()}
+                      </td>
+                       <td className="px-6 py-4">
+                           <StatusBadge status={ret.status || "Draft"} />
+                      </td>
+                       <td className="px-6 py-4 text-sm font-bold text-slate-900">
+                           ${parseFloat(ret.total_refund).toFixed(2)}
+                      </td>
+                       <td className="px-6 py-4">
+                           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                    onClick={() => handleOpenModal(ret)}
+                                    className="p-1.5 text-indigo-600 hover:bg-white bg-indigo-50 rounded-lg transition-colors shadow-sm"
+                                    title="Edit"
+                                >
+                                    <FiEdit3 size={16} />
+                                </button>
+                                <button 
+                                     onClick={() => handleDelete(ret.return_id)}
+                                    className="p-1.5 text-red-600 hover:bg-white bg-red-50 rounded-lg transition-colors shadow-sm"
+                                    title="Delete"
+                                >
+                                    <FiTrash2 size={16} />
+                                </button>
+                           </div>
+                      </td>
+                  </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </div>
 
-        {/* Modal */}
-        <Modal // Create Modal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          title={
-            <>
-              <FiRefreshCw className="w-6 h-6" /> Create Return Order
-            </>
-          }
-        >
-          {/* Form Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+      {/* Modal - Create/Edit */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={
+          <>
+            {editingReturn ? <FiEdit3 className="text-indigo-500" /> : <FiRefreshCw className="text-indigo-500" />}
+            {editingReturn ? "Edit Return Order" : "Create Return Order"}
+          </>
+        }
+      >
+         <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Sale Reference</label>
+                    <div className="relative">
+                        <FiFileText className="absolute left-3 top-3 text-slate-400" />
+                        <input 
+                            type="text" 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                            value={saleRef}
+                            onChange={e => setSaleRef(e.target.value)}
+                            placeholder="INV-XXXX"
+                        />
+                    </div>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Customer</label>
+                    <div className="relative">
+                        <FiUser className="absolute left-3 top-3 text-slate-400" />
+                        <select 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none"
+                            value={customerId}
+                            onChange={e => setCustomerId(e.target.value)}
+                        >
+                            <option value="" disabled>Select Customer</option>
+                            {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Warehouse</label>
+                    <div className="relative">
+                        <FiMapPin className="absolute left-3 top-3 text-slate-400" />
+                        <select 
+                            className="w-full pl-9 p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none"
+                            value={warehouseId}
+                            onChange={e => setWarehouseId(e.target.value)}
+                        >
+                            <option value="" disabled>Select Warehouse</option>
+                            {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
+                        </select>
+                    </div>
+                 </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Reason</label>
+                    <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                        placeholder="e.g. Defective"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Refund Type</label>
+                    <select 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        value={refundType}
+                        onChange={e => setRefundType(e.target.value)}
+                    >
+                        <option>Cash</option>
+                        <option>Credit Note</option>
+                        <option>Exchange</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Status</label>
+                    <select 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        value={returnStatusField}
+                        onChange={e => setReturnStatusField(e.target.value)}
+                    >
+                        <option>Draft</option>
+                        <option>Confirmed</option>
+                        <option>Cancelled</option>
+                    </select>
+                 </div>
+            </div>
+
+            {/* Items */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sale Reference
-              </label>
-              <input
-                type="text"
-                placeholder="INV-0012"
-                value={saleRef}
-                onChange={(e) => setSaleRef(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800 text-lg">Items to Return</h3>
+                    <button 
+                        onClick={addItem}
+                        className="text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-200"
+                    >
+                        + Add Item
+                    </button>
+                 </div>
+                 
+                 <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left">
+                         <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-5/12">Product</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Qty</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Refund Price</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-2/12">Subtotal</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-1/12 text-center">Action</th>
+                            </tr>
+                        </thead>
+                         <tbody className="divide-y divide-slate-100 bg-white">
+                             {returnItems.map((item, index) => (
+                                 <tr key={item.key}>
+                                     <td className="px-4 py-2">
+                                         <select 
+                                            value={item.product_id} 
+                                            onChange={e => updateItem(index, "product_id", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         >
+                                             <option value="" disabled>Select Product...</option>
+                                             {products.map(p => (
+                                                 <option key={p.product_id} value={p.product_id}>{p.name}</option>
+                                             ))}
+                                         </select>
+                                     </td>
+                                     <td className="px-4 py-2">
+                                         <input 
+                                            type="number" 
+                                            min="1"
+                                            value={item.qty}
+                                            onChange={e => updateItem(index, "qty", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         />
+                                     </td>
+                                     <td className="px-4 py-2">
+                                         <input 
+                                            type="number" 
+                                            min="0"
+                                            step="0.01"
+                                            value={item.price}
+                                            onChange={e => updateItem(index, "price", e.target.value)}
+                                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                         />
+                                     </td>
+                                     <td className="px-4 py-2 text-sm font-semibold text-slate-700">
+                                         ${item.subtotal.toFixed(2)}
+                                     </td>
+                                     <td className="px-4 py-2 text-center">
+                                         <button 
+                                            onClick={() => removeItem(item.key)}
+                                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                         >
+                                             <FiTrash2 />
+                                         </button>
+                                     </td>
+                                 </tr>
+                             ))}
+                         </tbody>
+                         <tfoot className="bg-slate-50 border-t border-slate-200">
+                             <tr>
+                                 <td colSpan="3" className="px-4 py-3 text-right font-bold text-slate-600">Total Refund:</td>
+                                 <td className="px-4 py-3 font-bold text-red-600 text-lg">${calculateTotal().toFixed(2)}</td>
+                                 <td></td>
+                             </tr>
+                         </tfoot>
+                    </table>
+                 </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer
-              </label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="" disabled>
-                  Select a customer
-                </option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Warehouse
-              </label>
-              <select
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="" disabled>
-                  Select a warehouse
-                </option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Return Reason
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Damaged product, wrong item"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Refund Type
-              </label>
-              <select
-                value={refundType}
-                onChange={(e) => setRefundType(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Cash">Cash</option>
-                <option value="Credit Note">Credit Note</option>
-                <option value="Exchange">Exchange</option>
-              </select>
-            </div>
-          </div>
 
-          {/* Product Items */}
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold text-lg text-gray-700">
-              Returned Items
-            </h3>
-            <button
-              onClick={addItem}
-              className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-blue-200 transition-colors"
-            >
-              + Add Product
-            </button>
-          </div>
-
-          {/* Items Table */}
-          <div className="rounded-lg border border-gray-200 overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                    Product
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                    Qty
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                    Unit Price ($)
-                  </th>
-                  <th className="p-3 w-1/5 text-left text-xs font-semibold text-gray-500 uppercase">
-                    Subtotal ($)
-                  </th>
-                  <th className="p-3 w-auto text-left text-xs font-semibold text-gray-500 uppercase">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {returnItems.map((item, index) => (
-                  <tr key={item.key}>
-                    <td className="p-2">
-                      <select
-                        value={item.product_id}
-                        onChange={(e) =>
-                          updateItem(index, "product_id", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        required
-                      >
-                        <option value="" disabled>
-                          Select a product
-                        </option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min={1}
-                        value={item.qty}
-                        onChange={(e) =>
-                          updateItem(
-                            index,
-                            "qty",
-                            parseInt(e.target.value) || 0
-                          )
-                        }
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={item.price}
-                        onChange={(e) =>
-                          updateItem(
-                            index,
-                            "price",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </td>
-                    <td className="p-2 text-sm text-gray-800 font-medium">
-                      {item.subtotal.toFixed(2)}
-                    </td>
-                    <td className="p-2">
-                      <button
-                        onClick={() => removeItem(item.key)}
-                        className="bg-red-100 text-red-600 px-2.5 py-1.5 rounded-md text-xs font-semibold hover:bg-red-200"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Total */}
-          <div className="text-right mt-5">
-            <span className="font-bold text-2xl text-gray-800">
-              Total Refund: ${calculateTotal().toFixed(2)}
-            </span>
-          </div>
-
-          {/* Modal Footer */}
-          <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-200">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleCreateReturn}
-              className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition-colors"
-            >
-              Create
-            </button>
-          </div>
-        </Modal>
-
-        {/* Edit Modal */}
-        <Modal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          title={
-            <>
-              <FiEdit className="w-6 h-6" /> Edit Return Order
-            </>
-          }
-        >
-          {/* Form Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sale Reference
-              </label>
-              <input
-                type="text"
-                placeholder="INV-0012"
-                value={saleRef}
-                onChange={(e) => setSaleRef(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+            {/* Footer Actions */}
+            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
+                <button 
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                    Cancel
+                </button>
+                 <button 
+                    onClick={handleSubmit}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-200 transition-all disabled:opacity-70"
+                >
+                    {isLoading ? <FiLoader className="animate-spin" /> : <FiCheckCircle />}
+                    {editingReturn ? "Update Return" : "Create Return"}
+                </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer
-              </label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="" disabled>
-                  Select a customer
-                </option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Warehouse
-              </label>
-              <select
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="" disabled>
-                  Select a warehouse
-                </option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Items Table (simplified for edit) */}
-          <h3 className="font-semibold text-lg text-gray-700 mb-3">
-            Update Returned Items (if any)
-          </h3>
-          <div className="rounded-lg border border-gray-200 overflow-x-auto">
-            {/* A full implementation would show and allow editing of existing items */}
-            <div className="p-4 text-center text-gray-500">
-              Editing of individual return items is not yet implemented.
-              <br />
-              You can re-add items below to calculate a new total.
-            </div>
-          </div>
-
-          {/* Total */}
-          <div className="text-right mt-5">
-            <span className="font-bold text-2xl text-gray-800">
-              New Total Refund: ${calculateTotal().toFixed(2)}
-            </span>
-          </div>
-
-          {/* Modal Footer */}
-          <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-200">
-            <button
-              onClick={() => setIsEditModalOpen(false)}
-              className="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleUpdateReturn}
-              className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition-colors"
-            >
-              Save Changes
-            </button>
-          </div>
-        </Modal>
-      </motion.div>
-    </>
+         </div>
+      </Modal>
+    </div>
   );
 }

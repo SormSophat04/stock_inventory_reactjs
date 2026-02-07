@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { FiPlus, FiEdit, FiTrash2, FiX } from "react-icons/fi";
+import React, { useState, useEffect, useContext } from "react";
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiTag, FiSearch } from "react-icons/fi";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
+import { AuthContext } from "../../contexts/AuthContext";
+import api from "../../api/axios";
 
 // --- Modal Component for Add/Edit ---
 function BrandModal({
@@ -13,32 +16,25 @@ function BrandModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300">
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md m-4 transform transition-all duration-300 scale-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-all p-4">
+       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100 flex flex-col">
         {/* --- Modal Header --- */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-slate-900">
-            {brand ? "Edit Brand" : "Add New Brand"}
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-gray-900">
+            {brand ? "Edit Brand" : "New Brand"}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <FiX className="w-6 h-6" />
+            <FiX className="w-5 h-5" />
           </button>
         </div>
 
         {/* --- Modal Form --- */}
-        <form onSubmit={onSubmit}>
-          <div className="space-y-4">
-            {/* --- Name Input --- */}
-            <div>
-              <label
-                htmlFor="name"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Brand Name
-              </label>
+        <form onSubmit={onSubmit} className="p-6 space-y-5">
+           <div className="space-y-2">
+              <label htmlFor="name" className="block text-sm font-semibold text-gray-700">Brand Name</label>
               <input
                 type="text"
                 id="name"
@@ -46,47 +42,27 @@ function BrandModal({
                 value={formData.name}
                 onChange={onFormChange}
                 required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="e.g., Apple"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                placeholder="e.g. Apple, Nike..."
               />
             </div>
-
-            {/* --- Supplier Input --- */}
-            <div>
-              <label
-                htmlFor="supplier"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Supplier
-              </label>
-              <input
-                type="text"
-                id="supplier"
-                name="supplier"
-                value={formData.supplier}
-                onChange={onFormChange}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="e.g., Apple Inc."
-              />
+          
+            {/* --- Modal Footer (Actions) --- */}
+            <div className="flex justify-end gap-3 pt-4">
+                <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                Cancel
+                </button>
+                <button
+                type="submit"
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/20 transition-all"
+                >
+                {brand ? "Update Brand" : "Create Brand"}
+                </button>
             </div>
-          </div>
-
-          {/* --- Modal Footer (Actions) --- */}
-          <div className="flex justify-end gap-3 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="py-2 px-4 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition duration-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-200"
-            >
-              Save Brand
-            </button>
-          </div>
         </form>
       </div>
     </div>
@@ -95,216 +71,198 @@ function BrandModal({
 
 // --- Main Brand Page Component ---
 export default function Brand() {
-  // --- State ---
+  const { user } = useContext(AuthContext);
+  const ROLES = { ADMIN: "admin", MANAGER: "manager" };
 
-  // Stores the list of all brands
-  const [brands, setBrands] = useState([
-    {
-      id: 1,
-      name: "Apple",
-      supplier: "Apple Inc.",
-      createdAt: "2025-11-09T10:30:00Z",
-    },
-    {
-      id: 2,
-      name: "Samsung",
-      supplier: "Samsung Electronics",
-      createdAt: "2025-11-10T11:45:00Z",
-    },
-    {
-      id: 3,
-      name: "Logitech",
-      supplier: "TechData Distribution",
-      createdAt: "2025-11-11T09:15:00Z",
-    },
-    {
-      id: 4,
-      name: "Steelcase",
-      supplier: "OfficeWorld Supplies",
-      createdAt: "2025-11-11T14:20:00Z",
-    },
-  ]);
-
-  // Controls the visibility of the Add/Edit modal
+  const [brands, setBrands] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Holds the brand object being edited, or null if adding a new one
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [currentBrand, setCurrentBrand] = useState(null);
+  const [formData, setFormData] = useState({ name: "" });
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Holds the form data for the modal inputs
-  const [formData, setFormData] = useState({ name: "", supplier: "" });
+  const hasRole = (roles) => user && user.role && roles.includes(user.role);
 
-  // --- Effects ---
-
-  // Effect to populate form when `currentBrand` changes (i.e., when "Edit" is clicked)
   useEffect(() => {
     if (currentBrand) {
-      setFormData({
-        name: currentBrand.name,
-        supplier: currentBrand.supplier,
-      });
+      setFormData({ name: currentBrand.name });
     } else {
-      // Reset form when adding a new brand
-      setFormData({ name: "", supplier: "" });
+      setFormData({ name: "" });
     }
   }, [currentBrand]);
 
-  // --- Event Handlers ---
+  useEffect(() => {
+    const fetchBrands = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get("/brands");
+        setBrands(response.data.data || response.data);
+        setError(null);
+      } catch (err) {
+        setError("Failed to fetch brands.");
+        console.error("Fetch Error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBrands();
+  }, []);
 
-  // Opens the modal in "Add New" mode
   const handleAddNewClick = () => {
-    setCurrentBrand(null); // Ensure we're in "add" mode
-    setFormData({ name: "", supplier: "" }); // Clear form
+    setCurrentBrand(null);
+    setFormData({ name: "" });
     setIsModalOpen(true);
   };
 
-  // Opens the modal in "Edit" mode for a specific brand
   const handleEditClick = (brand) => {
-    setCurrentBrand(brand); // Set the brand to be edited
+    setCurrentBrand(brand);
     setIsModalOpen(true);
   };
 
-  // Closes the modal and resets state
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setCurrentBrand(null);
-    setFormData({ name: "", supplier: "" });
+    setFormData({ name: "" });
   };
 
-  // Deletes a brand by its ID
-  const handleDeleteClick = (brandId) => {
+  const handleDeleteClick = async (brandId) => {
     if (window.confirm("Are you sure you want to delete this brand?")) {
-      // In a real app, you'd call an API to delete the brand.
-      setBrands((prevBrands) =>
-        prevBrands.filter((brand) => brand.id !== brandId)
-      );
+      try {
+        await api.delete(`/brands/${brandId}`);
+        setBrands((prev) => prev.filter((b) => b.brand_id !== brandId));
+        setError(null);
+      } catch {
+        setError("Failed to delete brand.");
+      }
     }
   };
 
-  // Handles changes to form inputs
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({
-      ...prevData,
-      [name]: value,
-    }));
-  };
+  const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // Handles the form submission (both Add and Edit)
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (currentBrand) {
-      // --- Edit Logic ---
-      setBrands((prevBrands) =>
-        prevBrands.map((brand) =>
-          brand.id === currentBrand.id ? { ...brand, ...formData } : brand
-        )
-      );
-    } else {
-      // --- Add Logic ---
-      const newBrand = {
-        id: Date.now(), // Use a simple timestamp for a unique ID
-        ...formData,
-        createdAt: new Date().toISOString(), // Add creation timestamp
-      };
-      setBrands((prevBrands) => [...prevBrands, newBrand]);
+    setError(null);
+    try {
+      if (currentBrand) {
+        const response = await api.put(`/brands/${currentBrand.brand_id}`, formData);
+        const updated = response.data.data || response.data.brand;
+        setBrands((prev) => prev.map((b) => (b.brand_id === currentBrand.brand_id ? updated : b)));
+      } else {
+        const response = await api.post("/brands", formData);
+        const newBrand = response.data.data || response.data.brand;
+        setBrands((prev) => [newBrand, ...prev]);
+      }
+      handleCloseModal();
+    } catch {
+      setError("Failed to save brand.");
     }
-    handleCloseModal(); // Close modal on success
   };
 
-  // --- Render ---
+  const filteredBrands = brands.filter(b => 
+    b.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className=" p-4 sm:p-8 font-inter">
-      <div className="mx-auto">
+    <div className="p-6 max-w-7xl mx-auto font-sans min-h-[calc(100vh-80px)]">
+      
         {/* --- Header --- */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-slate-900">
-            Inventory Brands
-          </h1>
-          <button
-            onClick={handleAddNewClick}
-            className="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-indigo-700 transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-          >
-            <FiPlus className="w-5 h-5" />
-            Add New
-          </button>
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
+                <span className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                    <FiTag size={24} />
+                </span>
+                Brands
+            </h1>
+            <p className="mt-1 text-gray-500 text-sm ml-14">Manage brands associated with your products.</p>
+          </div>
+          
+           <div className="flex items-center gap-4 w-full md:w-auto">
+             <div className="relative flex-1 md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <FiSearch />
+                </div>
+                <input
+                    type="text"
+                    placeholder="Search brands..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none text-sm shadow-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+            </div>
+            
+             {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                <button
+                onClick={handleAddNewClick}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-indigo-600/20 transition-all transform hover:scale-[1.02] whitespace-nowrap"
+                >
+                <FiPlus size={20} />
+                <span>New Brand</span>
+                </button>
+            )}
+          </div>
         </div>
 
-        {/* --- Brand List / Table --- */}
-        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-          {/* --- Table Header (Visible on large screens) --- */}
-          <div className="hidden md:grid md:grid-cols-4 gap-4 text-sm font-medium uppercase tracking-wider text-slate-600 bg-slate-100 p-4 border-b border-slate-200">
-            <div className="col-span-1">Brand Name</div>
-            <div className="col-span-1">Supplier</div>
-            <div className="col-span-1">Date Added</div>
-            <div className="col-span-1 text-right">Actions</div>
+        {/* --- Error Display --- */}
+        {error && (
+          <div className="bg-red-50 border border-red-100 text-red-700 px-6 py-4 rounded-xl mb-6 flex items-center gap-3">
+             <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            {error}
           </div>
+        )}
 
-          {/* --- Brand Items --- */}
-          <div className="divide-y divide-slate-200">
-            {brands.length > 0 ? (
-              brands.map((brand) => (
+        {/* --- Brand List / Grid --- */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {loading ? (
+                <div className="col-span-full flex justify-center py-20">
+                    <LoadingSpinner message="Loading Brands..." />
+                </div>
+            ) : filteredBrands.length > 0 ? (
+              filteredBrands.map((brand) => (
                 <div
-                  key={brand.id}
-                  className="grid md:grid-cols-4 gap-4 p-4 items-center hover:bg-slate-50"
+                  key={brand.brand_id}
+                  className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-100 transition-all duration-200 relative overflow-hidden flex flex-col justify-between h-full"
                 >
-                  {/* --- Brand Name --- */}
-                  <div className="col-span-1">
-                    <div className="md:hidden font-bold text-sm text-slate-500">
-                      Name
-                    </div>
-                    <div className="font-semibold text-slate-800 text-lg">
-                      {brand.name}
-                    </div>
+                   <div className="absolute top-0 right-0 p-4 transition-opacity opacity-0 group-hover:opacity-100 flex gap-2">
+                       {hasRole([ROLES.ADMIN, ROLES.MANAGER]) && (
+                           <>
+                            <button
+                                onClick={() => handleEditClick(brand)}
+                                className="p-2 bg-gray-50 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-gray-100"
+                                title="Edit"
+                            >
+                                <FiEdit2 size={16} />
+                            </button>
+                             {hasRole([ROLES.ADMIN]) && (
+                                <button
+                                    onClick={() => handleDeleteClick(brand.brand_id)}
+                                    className="p-2 bg-gray-50 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-100"
+                                    title="Delete"
+                                >
+                                    <FiTrash2 size={16} />
+                                </button>
+                             )}
+                           </>
+                       )}
                   </div>
-
-                  {/* --- Brand Supplier --- */}
-                  <div className="col-span-1">
-                    <div className="md:hidden font-bold text-sm text-slate-500">
-                      Supplier
+                  
+                  <div>
+                    <div className="inline-flex p-3 bg-gray-50 text-gray-400 rounded-xl mb-3">
+                         <FiTag size={20} />
                     </div>
-                    <div className="text-slate-600">{brand.supplier}</div>
-                  </div>
-
-                  {/* --- Date Added --- */}
-                  <div className="col-span-1">
-                    <div className="md:hidden font-bold text-sm text-slate-500">
-                      Date Added
-                    </div>
-                    <div className="text-slate-600 text-sm">
-                      {/* Format the date string to be more readable */}
-                      {new Date(brand.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-
-                  {/* --- Action Buttons --- */}
-                  <div className="col-span-1 flex justify-end gap-3 mt-2 md:mt-0">
-                    <button
-                      onClick={() => handleEditClick(brand)}
-                      className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-full transition duration-200"
-                      title="Edit"
-                    >
-                      <FiEdit className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClick(brand.id)}
-                      className="p-2 text-red-600 hover:bg-red-100 rounded-full transition duration-200"
-                      title="Delete"
-                    >
-                      <FiTrash2 className="w-5 h-5" />
-                    </button>
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">{brand.name}</h3>
+                    <p className="text-xs text-gray-400 font-mono">ID: {brand.brand_id}</p>
                   </div>
                 </div>
               ))
             ) : (
-              // --- Empty State ---
-              <div className="text-center p-12 text-slate-500">
-                No brands found. Click "Add New" to get started!
-              </div>
+                <div className="col-span-full py-20 text-center bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+                    <FiTag size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p className="text-gray-500 font-medium">No brands found.</p>
+                </div>
             )}
-          </div>
         </div>
-      </div>
 
       {/* --- Add/Edit Modal --- */}
       <BrandModal

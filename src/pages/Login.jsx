@@ -1,15 +1,27 @@
-import React, { useState } from "react";
-import { FiUser, FiLock } from "react-icons/fi"; // Using react-icons
+import React, { useContext, useState } from "react";
+import { FiUser, FiLock } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../contexts/AuthContext";
 
 function Login() {
+  const { login } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log("Login attempt:", { email, password });
-    // In a real app, you'd call an API here
+    setError(null);
+    setIsLoading(true);
+    try {
+      await login(email, password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.message || "An unexpected error occurred.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -24,6 +36,13 @@ function Login() {
 
         {/* Form Content */}
         <form onSubmit={handleSubmit} className="space-y-6 px-8">
+          {/* Error Message */}
+          {error && (
+            <div className="rounded-md bg-red-100 p-3 text-center text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           {/* Email Input */}
           <div>
             <div className="relative rounded-md border border-gray-300 bg-gray-100 py-3 pl-4 pr-10">
@@ -68,11 +87,17 @@ function Login() {
             {/* Added some padding above the button */}
             <button
               type="submit"
-              className="w-full rounded-md bg-red-600 py-3 text-center text-lg font-semibold uppercase text-white shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              disabled={isLoading}
+              className={`w-full rounded-md bg-red-600 py-3 text-center text-lg font-semibold uppercase text-white shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
+                isLoading
+                  ? "cursor-not-allowed opacity-70"
+                  : "hover:bg-red-700"
+              }`}
             >
-              Login
+              {isLoading ? "Logging in..." : "Login"}
             </button>
           </div>
+
         </form>
 
         {/* Forgot Password Link */}

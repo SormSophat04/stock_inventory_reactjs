@@ -1,25 +1,43 @@
-import React from 'react';
-import { FaStar } from 'react-icons/fa';
+import React from "react";
+import { FiTag, FiMoreHorizontal } from "react-icons/fi";
 
 function ProductCard({ product }) {
+  // Construct the full image URL from the backend's storage path
+  const imageUrl = product.image
+    ? `${import.meta.env.VITE_API_BASE_URL}/storage/${product.image}`
+    : "https://placehold.co/400x400/f1f5f9/64748b?text=No+Image";
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden transition-shadow hover:shadow-md">
-      <div className="bg-gray-50 flex items-center justify-center p-4 min-h-[360px]">
-        <img 
-          src={product.imageUrl} 
-          alt={product.name} 
-          className="w-full h-full object-cover"
-          onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/300x300/EEE/AAA?text=Image+Error'; }}
+    <div className="group relative bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1">
+      <div className="bg-slate-50 aspect-square flex items-center justify-center overflow-hidden">
+        <img
+          src={imageUrl}
+          alt={product.name}
+          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src =
+              "https://placehold.co/400x400/f1f5f9/64748b?text=No+Image";
+          }}
         />
       </div>
-      <div className="p-4">
-        <h3 className="text-lg font-semibold text-gray-800">{product.name}</h3>
-        <p className="text-sm text-gray-500 mb-2">{product.category}</p>
+      <div className="p-4 space-y-2">
+        <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+          {product.category?.name || "Uncategorized"}
+        </p>
+        <h3
+          className="text-base font-bold text-slate-800 truncate"
+          title={product.name}
+        >
+          {product.name}
+        </h3>
         <div className="flex justify-between items-center">
-          <p className="text-lg font-bold text-gray-900">${product.price.toFixed(2)}</p>
-          <div className="flex items-center gap-1 text-sm text-gray-600">
-            <FaStar className="text-yellow-400" />
-            <span>{product.rating}</span>
+          <p className="text-lg font-extrabold text-slate-900">
+            ${Number(product.sell_price).toFixed(2)}
+          </p>
+          <div className="flex items-center gap-1 text-sm text-slate-500 font-medium">
+            <FiTag className="w-4 h-4" />
+            <span>{product.sku}</span>
           </div>
         </div>
       </div>

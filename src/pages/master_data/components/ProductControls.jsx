@@ -1,7 +1,7 @@
 import React from 'react';
 import { FaTable, FaList, FaFilter, FaSearch } from 'react-icons/fa';
 
-function ProductControls({ activeTab, setActiveTab, activeView, setActiveView }) {
+function ProductControls({ activeTab, setActiveTab, activeView, setActiveView, searchQuery, setSearchQuery }) {
   const tabs = ['All', 'Active', 'Non Active'];
   const viewButtons = [
     { name: 'Table', icon: FaTable },
@@ -50,7 +50,9 @@ function ProductControls({ activeTab, setActiveTab, activeView, setActiveView })
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search Product"
+              placeholder="Search Product..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300"
             />
             <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

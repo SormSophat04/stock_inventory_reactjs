@@ -19,7 +19,7 @@ import {
   FiCreditCard,
   FiChevronRight
 } from "react-icons/fi";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useDispatch, useSelector } from "react-redux";
 // import { useNavigate } from "react-router-dom";
 
